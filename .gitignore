@@ -8,3 +8,5 @@ data/
 *.xlsx
 *.zip
 *.tar.gz
+
+.streamlit/secrets.toml
