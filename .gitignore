@@ -4,8 +4,6 @@ __pycache__/
 .env
 
 data/
-*.csv
-*.xlsx
 *.zip
 *.tar.gz
 
