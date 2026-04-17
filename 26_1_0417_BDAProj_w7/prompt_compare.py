@@ -13,14 +13,14 @@ AI에 관점에서 본 인간과 AI의 차이점을 알려주세요.
 - 마지막에 한 줄 요약 추가
 """
 
-print("=" * 60)
+print("=" * 20)
 print("나쁜 프롬프트")
-print("=" * 60)
+print("=" * 20)
 response = ollama.generate(model="gemma3:4b", prompt=bad_prompt)
 print(response["response"][:300])  # 앞 300자만
 
-print("\n" + "=" * 60)
+print("\n" + "=" * 20)
 print("좋은 프롬프트")
-print("=" * 60)
+print("=" * 20)
 response = ollama.generate(model="gemma3:4b", prompt=good_prompt)
 print(response["response"])
