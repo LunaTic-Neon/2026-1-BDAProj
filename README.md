@@ -23,7 +23,7 @@ Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Oll
 | w6 | `26_1_0410_BDAProj_w6` | Ollama LLM 기초 + 영화 리뷰 분석 | `ollama` 패키지로 generate/chat/stream/multi-turn 실습, NSMC 영화 리뷰 감성 분석 대시보드 |
 | w7 | `26_1_0417_BDAProj_w7` | LLM 응용 | 감성 분석, JSON 구조화 출력, 텍스트 분석, 프롬프트 비교, Streamlit 챗봇 풀버전 |
 | w10 | `26_1_0508_BDAProj_w10` | 웹 공격 탐지 — 데이터 준비/EDA | Kaggle CSIC 2010 HTTP 데이터셋 정제, 공격 유형(SQLi/XSS/Path Traversal/CMD Injection) 퀴즈, EDA 노트북 |
-| w11 | `26_1_0515_BDAProj_w11` | 웹 공격 탐지 — 비교 분석 | CSIC 2010 10K vs 61K 데이터셋 비교 분석 Streamlit 리포트 |
+| w11 | `26_1_0515_BDAProj_w11` | 웹 공격 탐지 — 전처리/특성 + LLM 분류 | CSIC 2010 전처리·특성 엔지니어링 노트북(23개 숫자형 특성, 80:20 분할, StandardScaler), Ollama `gemma3:4b` HTTP 요청 분류 + 프롬프트 4종(zero-shot / 2-shot / 7-shot / attack catalog) 비교 실험 (`LLM_PROMPT_REPORT.md`) |
 
 ---
 
