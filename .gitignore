@@ -9,6 +9,6 @@ data/
 
 .streamlit/secrets.toml
 
-# Claude Code 관련 (커밋 제외)
+# Claude Code
 .claude/
 CLAUDE.md
