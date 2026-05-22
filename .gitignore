@@ -8,3 +8,7 @@ data/
 *.tar.gz
 
 .streamlit/secrets.toml
+
+# Claude Code 관련 (커밋 제외)
+.claude/
+CLAUDE.md
