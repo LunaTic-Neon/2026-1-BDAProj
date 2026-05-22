@@ -6,7 +6,8 @@
 
 2026학년도 1학기 **빅데이터분석프로그래밍** 수업의 주차별 실습 코드를 모아둔 저장소입니다.
 Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Ollama) 응용,
-머신러닝 기반 웹 공격 탐지(CSIC 2010) 등 한 학기 동안 다룬 실습을 주차 단위로 보관합니다.
+머신러닝 기반 웹 공격 탐지(CSIC 2010), 비전 모델(ViT) 활용 등
+한 학기 동안 다룬 실습을 주차 단위로 보관합니다.
 
 ---
 
@@ -24,6 +25,7 @@ Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Oll
 | w7 | `26_1_0417_BDAProj_w7` | LLM 응용 | 감성 분석, JSON 구조화 출력, 텍스트 분석, 프롬프트 비교, Streamlit 챗봇 풀버전 |
 | w10 | `26_1_0508_BDAProj_w10` | 웹 공격 탐지 — 데이터 준비/EDA | Kaggle CSIC 2010 HTTP 데이터셋 정제, 공격 유형(SQLi/XSS/Path Traversal/CMD Injection) 퀴즈, EDA 노트북 |
 | w11 | `26_1_0515_BDAProj_w11` | 웹 공격 탐지 — 전처리/특성 + LLM 분류 | CSIC 2010 전처리·특성 엔지니어링 노트북(23개 숫자형 특성, 80:20 분할, StandardScaler), Ollama `gemma3:4b` HTTP 요청 분류 + 프롬프트 4종(zero-shot / 2-shot / 7-shot / attack catalog) 비교 실험 (`LLM_PROMPT_REPORT.md`) |
+| w12 | `26_1_0522_BDAProj_w12` | 이미지 분류 — 전처리·증강·사전학습 ViT | ① 이미지 표현/전처리 노트북(PIL ↔ NumPy ↔ `torch.Tensor` 변환, `Resize → ToTensor → Normalize`, CIFAR-10 로드 + DataLoader), ② 데이터 증강 노트북(`RandomHorizontalFlip`/`RandomRotation`/`RandomResizedCrop`/`ColorJitter`/`RandomGrayscale`/`GaussianBlur`, 학습용·검증용 `Compose` 분리), ③ HuggingFace `pipeline("image-classification")`으로 `google/vit-base-patch16-224` top-5 분류 + Attention 시각화 + ResNet/ConvNeXt/Swin 비교 |
 
 ---
 
@@ -34,7 +36,8 @@ Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Oll
 - **데이터 처리**: pandas, numpy
 - **공공데이터/외부 API**: `requests`, `python-dotenv`
 - **LLM**: Ollama (`gemma3:4b` 등 로컬 모델)
-- **머신러닝/NLP**: HuggingFace `datasets`, scikit-learn 계열
+- **머신러닝/NLP**: HuggingFace `datasets` · `transformers`, scikit-learn 계열
+- **딥러닝/비전**: PyTorch, torchvision (`transforms`, `DataLoader`), Vision Transformer (`google/vit-base-patch16-224`)
 
 전체 의존성은 루트의 `requirements.txt` 참고.
 
@@ -65,14 +68,20 @@ Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Oll
    # 예: w3 공공데이터 수집 (.env 파일에 API_KEY 필요)
    cd 26_1_0320_BDAProj_w3
    python data_collection.py
+
+   # 예: w12 비전 실습 (JupyterLab)
+   cd 26_1_0522_BDAProj_w12
+   jupyter lab
    ```
 
-   > Ollama 기반 실습(w6, w7)은 로컬에 [Ollama](https://ollama.com)가 설치되어 있고
+   > Ollama 기반 실습(w6, w7, w11)은 로컬에 [Ollama](https://ollama.com)가 설치되어 있고
    > 해당 모델(`gemma3:4b` 등)이 `ollama pull`로 받아져 있어야 합니다.
+   >
+   > w12 비전 실습은 첫 실행 시 ViT 모델(~330MB)과 CIFAR-10(~170MB)이 HuggingFace 캐시에 다운로드됩니다.
 
 ---
 
 ### 참고
 
-- `venv/`, `__pycache__/`, `.env`, `data/`, 압축 파일 등은 `.gitignore`로 제외됩니다.
+- `venv/`, `__pycache__/`, `.env`, `data/`, `.ipynb_checkpoints/`, 압축 파일 등은 `.gitignore`로 제외됩니다.
 - 외부 API 키(`API_KEY` 등)는 각 주차 폴더의 `.env`에 보관하며 저장소에는 포함하지 않습니다.
