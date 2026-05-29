@@ -2,7 +2,7 @@
 # 템플릿의 data_loader_image.py(로컬 폴더 스캔)를 이 프로젝트에 맞게 교체한 것.
 #   - 이 데이터는 이미지가 로컬이 아니라 CSV의 image_url(원격 주소)로 제공됨
 #   - 메타데이터(CSV)만 캐싱해 두고, 이미지 자체는 필요할 때 URL에서 받되 디스크에 캐시하여 재사용
-
+ 
 import os
 from io import BytesIO
 import hashlib

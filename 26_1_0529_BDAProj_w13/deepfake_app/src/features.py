@@ -1,7 +1,7 @@
 # src/features.py — 정제·특성 엔지니어링 (2차 작업에서 채움)
 import pandas as pd
 
-
+ 
 def url_domain(df: pd.DataFrame) -> pd.Series:
     """image_url에서 도메인만 추출 (예: images.unsplash.com).
 
