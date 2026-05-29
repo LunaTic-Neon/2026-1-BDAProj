@@ -1,0 +1,8 @@
+# 데이터 (용량 큼 — 출처는 ../문제정의.md 참고)
+data/*.csv
+
+# 모델 가중치
+*.pt
+
+__pycache__/
+.streamlit/secrets.toml
