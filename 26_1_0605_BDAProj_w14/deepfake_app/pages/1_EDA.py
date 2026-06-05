@@ -24,6 +24,7 @@ from src.data_loader import (
     LEAKAGE_COLS,
     set_cache_max_bytes,
 )
+from src.face_preprocess import detect_and_crop_for_df
 
 import numpy as np
 
@@ -306,6 +307,9 @@ with col_tool_right:
 st.markdown("---")
 st.header("5. 특성 추출 자동화 (선택 샘플에 대해)")
 st.caption("선택된 스냅샷(썸네일로 표시된 샘플)에 대해 features를 병렬 추출하고 CSV로 저장합니다.")
+# 옵션: 얼굴 크롭 선행 여부 선택
+use_face_crop = st.checkbox("얼굴 검출 및 크롭 후 특성 추출 (가능하면 face_path 우선)", value=True)
+require_face_for_crop = st.checkbox("크롭 시 얼굴 필수(얼굴 없는 이미지는 건너뜀)", value=False)
 if st.button("선택 샘플 특징 추출 시작"):
     with st.spinner("특성 추출 중... (이미지가 많으면 시간이 걸립니다)"):
         # require image_path column
@@ -314,7 +318,19 @@ if st.button("선택 샘플 특징 추출 시작"):
             st.error("추출할 로컬 이미지 경로가 없습니다. 먼저 썸네일을 캐시하여 로컬 경로를 확보하세요.")
         else:
             start = time.time()
-            df_feats = batch_extract_features(proc_df, image_col="image_path", nrows=None, n_workers=max_workers)
+            # optional: 얼굴 검출 및 크롭 수행
+            if use_face_crop:
+                try:
+                    st.info("얼굴 검출 및 크롭을 수행합니다. (시간이 걸릴 수 있습니다)")
+                    proc_df_crops = detect_and_crop_for_df(proc_df, image_col="image_path", id_col=("image_id" if "image_id" in proc_df.columns else None),
+                                                          margin=0.2, require_face=require_face_for_crop, n_workers=max_workers)
+                    # if face_path exists, prefer it for feature extraction
+                    proc_df = proc_df_crops.copy()
+                except Exception as e:
+                    st.warning(f"얼굴 전처리 실패: {e} — 원본 이미지로 추출을 계속합니다.")
+            # decide which column to use for extraction: face_path if available else image_path
+            feat_image_col = "face_path" if "face_path" in proc_df.columns and proc_df["face_path"].notnull().any() else "image_path"
+            df_feats = batch_extract_features(proc_df, image_col=feat_image_col, nrows=None, n_workers=max_workers)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_path = Path(os.path.dirname(os.path.dirname(__file__))) / "data" / f"features_sample_{ts}.csv"
             save_features(df_feats, out_path)

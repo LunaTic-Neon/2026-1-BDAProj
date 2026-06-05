@@ -23,6 +23,7 @@
   - 캐시 검사(검사할 URL 개수 입력 가능), 캐시 삭제, 특성 추출 버튼(선택 샘플 대상)
   - 시각화: 수치형 특성 히스토그램(무의미 컬럼 제외 로직 적용)
   - CSS 보강: 이미지 겹침/캡션 겹침 문제 완화
+  - 특성 추출 버튼에서 얼굴 크롭 옵션(얼굴 검출 → face_path 우선 사용)으로 `src.face_preprocess.detect_and_crop_for_df`를 호출하도록 연결됨
 
 - `pages/2_시각화.py`
   - 시각화에서 제외할 무의미한 컬럼(`EXCLUDE_VIS_COLS`) 및 유틸 함수(`get_numeric_vis_cols`) 추가(시각화 시 자동 제외 권장)
@@ -34,21 +35,27 @@
   - 이미지 URL -> 디스크 캐시 저장 유틸 (`_url_to_name`, `_download_single`, `download_images_bulk`)
   - 캐시 관련: `CACHE_DIR`, `cache_size_info`, `clear_cache`, `set_cache_max_bytes`, `_ensure_cache_under_limit`
   - 이미지 단일 fetch (`fetch_image`) 구현
-  - (추가 예정) validate/quality 검사 유틸을 문서화해 둠
+  - 메타 검증/정규화 유틸 추가: `normalize_label`, `validate_metadata`, `save_report_json`
+  - URL 상태 검사 유틸 추가: `_url_health_check`, `validate_urls` (병렬 검사, 샘플 검사 가능)
+  - DataFrame 단위 다운로드/검증 편의함수 추가: `download_images_for_df`, `download_and_validate`
+
+- `src/image_quality.py` (신규)
+  - 이미지 품질 검사 유틸 구현: 손상/열기 실패 검사, 해상도(min width/height), 선명도(대체 방식), 밝기 검사
+  - 주요 함수: `filter_valid_images` (DataFrame 단위), `filter_single`
+  - `download_and_validate`에서 연동되어 사용 가능
+
+- `src/face_preprocess.py` (신규)
+  - 얼굴 검출 및 크롭 유틸 구현: RetinaFace → MTCNN → OpenCV 순 폴백
+  - 주요 함수: `detect_and_crop_for_df` (DataFrame을 입력으로 face_path, face_bbox, face_found 컬럼 추가)
+  - 크롭 파일 저장 경로: `data/cache/crops/` (기본)
 
 - `src/features.py`
-  - 기본 이미지 특성 추출: 색상 평균/표준편차, 밝기, 선명도, mean/std pixel
-  - 얼굴 검출: 우선 MTCNN(if facenet-pytorch 설치) → OpenCV Haar cascade 폴백
+  - 기본 이미지 특성 추출: 색상 평균/표준편차, 밝기, 선명도, mean/std pixel, 얼굴 관련(feat: face_count, face_area_ratio)
   - `extract_basic_features`, `batch_extract_features`, `save_features` 제공
-  - RetinaFace/MTCNN 사용 시 자동 폴백 로직 포함(있는 경우만 사용)
+  - `batch_extract_features`는 DataFrame의 `image_path` 또는 `face_path`를 사용하여 병렬 특성 추출
 
 - `src/feature_pipeline.py`
-  - 청크 단위 배치 파이프라인 스크립트
-  - 동작: 메타 로드 → 청크 반복 → 이미지 다운로드(청크) → image_path 부착 → batch_extract_features → 임시 parquet 저장 → 최종 parquet 합침
-  - 실행 예시: `python -m src.feature_pipeline --out data/features_all.parquet --chunk 500 --workers 8 --limit 1000`
-
-- `src/features_config.py`
-  - 얼굴 검출/특성 추출 설정(예: USE_GPU, MIN_FACE_SIZE, MTCNN_THRESHOLDS, RETINAFACE_THRESHOLD)
+  - 청크 단위 배치 파이프라인 스크립트(기존 제공). 메타 로드 → 청크 반복 → 이미지 다운로드 → image_path 부착 → batch_extract_features → parquet 합침
 
 - `requirements.txt` (deepfake_app 하위)
   - 핵심: streamlit, pandas, plotly, pillow, requests, torch(옵션), numpy, tqdm, opencv-python, pyarrow 등
@@ -56,69 +63,71 @@
 
 ---
 
-## 실행 요령 (간단)
-1. 가상환경 생성 및 활성화 (PowerShell 예):
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-2. 패키지 설치:
-   pip install -r deepfake_app\requirements.txt
-   (facenet-pytorch/retina-face는 필요 시 별도 설치)
-3. 앱 실행:
-   cd deepfake_app
-   .\.venv\Scripts\Activate.ps1; streamlit run app.py
+## 현재까지 실제로 구현/연동된 항목 (요약)
+- Streamlit EDA UI(샘플 그리드, KPI, 결측/누수 리포트, 시각화) — 동작 확인됨
+- 이미지 캐시 및 병렬 다운로드 유틸(`download_images_bulk`) — 페이지에서 샘플 캐시용으로 사용 중
+- 메타데이터 검증/정규화 및 URL 상태 검사 유틸(`validate_metadata`, `validate_urls`) 추가됨
+- 이미지 품질 검사 모듈(`src/image_quality.py`) 생성 — DataFrame 단위 품질 리포트 제공
+- 얼굴 검출·크롭 모듈(`src/face_preprocess.py`) 생성 — 특성 추출 버튼에서 호출하도록 연결됨
+- 특성 추출 로직(`src/features.py -> batch_extract_features`) 및 샘플 특성 CSV 저장 연결됨
+- 시각화 페이지에서 민감/무의미 컬럼 제외 로직 적용됨
 
 ---
 
-## 알려진 제한/주의사항
-- facenet-pytorch, retina-face, torch 등 무거운 라이브러리는 별도 설치 필요. 설치 없이도 폴백 로직으로 동작하지만 얼굴 검출 성능은 낮을 수 있음.
-- 원격 이미지 다운로드는 느릴 수 있음 — 샘플 수 및 병렬 워커 수를 조정하세요.
-- 일부 파일 생성/편집은 워크스페이스 제약으로 자동 반영이 어려운 경우가 있었음. 변경 사항은 위 목록을 기준으로 코드에 반영되어 있으니, 문제가 있으면 알려주세요.
+## 현재 진행상태에서 결과물(예: `meta/valid_images.csv`, `data/features_all.parquet`)을 얻기 위해 필요한 작업
+아래 항목을 순서대로 실행하면 최종 산출물을 만들 수 있습니다. 각 단계별로 필요한 파일/명령과 예상 출력물을 명시합니다.
+
+1) 개발 환경 준비
+   - 작업: 가상환경 생성 및 의존성 설치
+   - 명령(예시): PowerShell에서
+     - python -m venv .venv ; .\.venv\Scripts\Activate.ps1 ; pip install -r deepfake_app\requirements.txt
+   - 비고: facenet-pytorch/retina-face 설치는 GPU/환경에 따라 선택적으로 진행
+
+2) 메타데이터 정합성 검사 실행
+   - 작업: `src/data_loader.validate_metadata`를 사용해 CSV 검사 및 정규화
+   - 출력: `reports/data_validation_report.json`(또는 CSV), `meta/valid_metadata.csv`(필요 시)
+   - 예시 코드: (파이썬 스크립트 또는 Jupyter) load_data -> validate_metadata(df, date_cols=[...], save_report='reports/validation.json')
+
+3) 전체/청크 단위 이미지 다운로드 및 캐시 생성
+   - 작업: `src.data_loader.download_images_for_df` 또는 `download_and_validate`로 청크별 다운로드
+   - 입력: 메타(필터된 행 수 또는 전체)
+   - 출력: 메타에 `image_path` 컬럼 추가; 캐시 파일은 `data/image_cache/`에 저장
+   - 비고: 캐시 용량 제한은 `set_cache_max_bytes`로 조정
+
+4) 이미지 품질 검사 및 valid_images 목록 생성
+   - 작업: `src.image_quality.filter_valid_images`로 `image_path`를 검사
+   - 출력: `meta/valid_images.csv` (iq_pass == True 인 항목), 품질 리포트(이유별 샘플)
+   - 비고: 샘플 단계에서 우선 small-batch(예: 500개)로 실행해 임계값 튜닝 권장
+
+5) 얼굴 검출 및 face-crop 생성 (선택적이지만 권장)
+   - 작업: `src.face_preprocess.detect_and_crop_for_df` 실행 → `face_path` 컬럼 생성
+   - 출력: `data/cache/crops/<image_id>_face.jpg` 및 메타에 face 관련 컬럼 추가
+   - 비고: facenet-pytorch/retina-face가 있으면 검출 성능 향상
+
+6) 배치 특성 추출 (청크 단위 병렬)
+   - 작업: `src.features.batch_extract_features` 또는 `src/feature_pipeline.py` 실행
+   - 출력: 청크별 임시 parquet 또는 CSV, 최종 `data/features_all.parquet` 또는 `data/features_all.csv`
+   - 권장 실행 예시: `python -m src.feature_pipeline --out data/features_all.parquet --chunk 500 --workers 8 --limit 10000`
+
+7) 검증 및 시각화
+   - 작업: 합쳐진 features와 메타 병합 → 이상치/결측 리포트 생성 → Streamlit `pages/2_시각화.py`에서 특성 시각화
+   - 출력: 시각화 가능한 대시보드, 이상치 리스트, 모델 학습 전처리 체크리스트
 
 ---
 
-## 전처리 / 특성 추출 진행 계획 (간단)
-아래 계획은 우선순위별 단계와 예상 산출물을 제시합니다. 각 단계는 `src/` 아래에 유틸/스크립트를 구현하여 파이프라인으로 연결합니다.
-
-1) 데이터 정합성 검사 (src/data_validation.py)
-   - 수행 내용: 결측/중복/이상치 표준 검사, 타입 검사, 날짜 파싱
-   - 산출물: `reports/data_validation_report.html` 또는 CSV, `meta/valid_metadata.csv`
-
-2) 이미지 품질 검사 (src/image_quality.py)
-   - 수행 내용: 원격 이미지 다운로드 후 손상 여부 검사, 최소 해상도/비율, 파일 크기 필터링
-   - 산출물: `meta/valid_images.csv` (정상 이미지만), 로그/샘플 이미지
-
-3) 얼굴 검출 및 정렬 (src/face_preprocess.py)
-   - 수행 내용: MTCNN/RetinaFace(가능한 경우) 사용하여 얼굴 검출 → 얼굴 중심 정렬 → face-crop 저장
-   - 출력: `cache/crops/<image_id>_face.jpg` 및 metadata에 `face_path`, `face_bbox`, `face_confidence` 컬럼 추가
-
-4) 기본/고급 특성 추출 (src/features.py 확장)
-   - 기본: RGB 평균/표준, 밝기, 선명도(variance of Laplacian), 색상 히스토그램
-   - 고급: HSV 히스토그램, edge density(Canny), texture(GLCM), embedding(FaceNet/ResNet 옵션)
-   - 병렬 배치: `src/feature_pipeline.py`로 청크 단위 병렬 처리 → Parquet 저장
-   - 출력: `data/features_*.parquet`, 최종 `data/features_all.parquet`
-
-5) 검증 및 시각화 (pages/2_시각화.py 업데이트)
-   - 수행 내용: 추출된 특성 분포 시각화, 클래스별 비교, 이상치 샘플 시각화
-   - 비고: 시각화에서 제외할 컬럼(그래프1, 그래프2 제외 리스트)은 아래와 같음
-     - image_id, image_url, label_numeric, category, source, fake_method, date_collected, version, year, domain
-
-6) 배포 가능한 파이프라인
-   - 스크립트: `scripts/run_full_pipeline.py` (가상환경에서 실행 가능하도록 CLI 제공)
-   - 옵션: 청크 사이즈, worker 수, 검증/덮어쓰기 옵션
-
-7) 문서화 및 테스트
-   - 문서: README에 실행 예시, 링크된 리포트
-   - 유닛 테스트: 특성 추출/이미지 검사에 대해 일부 테스트 케이스 작성
+## 우선순위별 실행 플랜 (단계별 작업 항목, 소요 추정)
+- 1단계 (오늘/빠르게): 의존성 설치, `load_data`로 메타 확인, `validate_metadata`(샘플) 실행 — 10~30분
+- 2단계 (단기): 소규모(500~2000) 샘플에 대해 `download_and_validate` 실행 → `filter_valid_images`로 임계값 조정 — 30분~2시간
+- 3단계 (중기): 얼굴 검출·크롭(선택) 및 `batch_extract_features`로 샘플 특성 추출, Streamlit에서 시각화 확인 — 1~3시간
+- 4단계 (완전 배치): 전체 데이터에 대해 `feature_pipeline.py` 실행(parquet 생성) — 데이터 크기에 따라 수시간~수일
 
 ---
 
-## 다음 권장 작업(우선순위)
-1. 데이터 정합성 검사(결측/중복/비정상) 자동화 및 리포트 생성
-2. 이미지 품질 검사(해상도, 파일 크기, 손상 여부) 및 `valid_images.csv` 생성
-3. 얼굴 중심 전처리: 검출 → 정렬 → face-crop 저장(모델 입력용)
-4. 기본 특성 확장: HSV 히스토그램, edge density, texture features
-5. 전체 데이터 배치 실행: `src/feature_pipeline.py`로 parquet 생성
+## 현재 작업에서 나에게 요청드릴 항목
+1. 어떤 단계부터 우선 실행할지 결정해주세요: (A) 소규모 샘플 실험, (B) 전체 데이터 배치 실행, (C) 얼굴 임베딩/고급 특성 우선
+2. 로컬에서 실행 가능한 권한(네트워크 접근, 디스크 여유)과 GPU 사용 가능 여부를 알려주세요.
+3. 원하는 출력 포맷(Parquet vs CSV)과 저장 위치가 있으면 알려주세요.
 
 ---
 
-문서가 더 필요하시면 어떤 형식(예: 체크리스트, 실행 스크립트, 튜닝 가이드)으로 정리할지 알려주세요.
+문서 추가/수정이 필요하면 형식(체크리스트/스크립트/튜닝 가이드)에 맞춰 바로 반영해 드리겠습니다.
