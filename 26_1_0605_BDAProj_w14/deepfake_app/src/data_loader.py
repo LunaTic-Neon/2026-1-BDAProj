@@ -4,6 +4,11 @@
 #   - 메타데이터(CSV)만 캐싱해 두고, 이미지 자체는 필요할 때 1장씩 URL에서 받는다(8GB 보호)
 import os
 from io import BytesIO
+import hashlib
+import time
+from pathlib import Path
+from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import requests
@@ -36,3 +41,134 @@ def fetch_image(url, timeout=10):
         return Image.open(BytesIO(resp.content)).convert("RGB")
     except Exception:
         return None
+
+
+# 이미지 캐시 디렉토리 (data/image_cache)
+CACHE_DIR = Path(os.path.dirname(os.path.dirname(__file__))) / "data" / "image_cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _url_to_name(url: str) -> str:
+    """URL을 안전한 파일명으로 변환 (SHA1 + 확장자 추출).
+    확장자가 없으면 .jpg 사용.
+    """
+    h = hashlib.sha1(url.encode("utf-8")).hexdigest()
+    path = url.split("?")[0]
+    ext = os.path.splitext(path)[1]
+    if not ext or len(ext) > 5:
+        ext = ".jpg"
+    return f"{h}{ext}"
+
+
+def _download_single(url: str, timeout: int = 10, retry: int = 2, session: Optional[requests.Session] = None) -> Optional[Path]:
+    """단일 URL을 다운로드하여 캐시에 저장한 뒤 저장 경로를 반환. 실패 시 None."""
+    if not url or not isinstance(url, str):
+        return None
+    fname = _url_to_name(url)
+    dest = CACHE_DIR / fname
+    if dest.exists():
+        return dest
+
+    sess = session or requests.Session()
+    for attempt in range(retry + 1):
+        try:
+            resp = sess.get(url, timeout=timeout)
+            resp.raise_for_status()
+            img = Image.open(BytesIO(resp.content)).convert("RGB")
+            tmp = CACHE_DIR / (fname + ".tmp")
+            img.save(tmp)
+            tmp.replace(dest)
+            return dest
+        except Exception:
+            if attempt < retry:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return None
+
+
+def cache_size_info() -> dict:
+    """캐시 디렉토리의 파일 수 및 총 용량(byte)을 반환."""
+    total = 0
+    count = 0
+    for p in CACHE_DIR.glob("*"):
+        if p.is_file():
+            count += 1
+            try:
+                total += p.stat().st_size
+            except Exception:
+                pass
+    return {"count": count, "bytes": total}
+
+
+def clear_cache() -> dict:
+    """이미지 캐시 전체를 삭제. 반환: removed_files 수."""
+    removed = 0
+    for p in CACHE_DIR.glob("*"):
+        try:
+            if p.is_file():
+                p.unlink()
+                removed += 1
+        except Exception:
+            continue
+    return {"removed_files": removed}
+
+
+# ---- 캐시 관리 기능 --------------------------------------------------
+# 전역: 캐시 최대 바이트 수(없음이면 제한 없음)
+CACHE_MAX_BYTES: Optional[int] = None
+
+
+def set_cache_max_bytes(max_bytes: Optional[int]):
+    """캐시 최대 크기(바이트)를 설정. None이면 제한 없음.
+
+    예: set_cache_max_bytes(1024*1024*1024)  # 1GB
+    """
+    global CACHE_MAX_BYTES
+    if max_bytes is None:
+        CACHE_MAX_BYTES = None
+    else:
+        CACHE_MAX_BYTES = int(max_bytes)
+
+
+def _ensure_cache_under_limit():
+    """캐시 디렉토리가 설정된 최대 바이트를 넘으면 오래된 파일부터 삭제하여 제한을 맞춘다.
+    삭제 기준: 파일의 최종 수정 시간(mtime).
+    """
+    if CACHE_MAX_BYTES is None:
+        return
+    info = cache_size_info()
+    total = info.get("bytes", 0)
+    if total <= CACHE_MAX_BYTES:
+        return
+    # 오래된 파일부터 삭제
+    files = [p for p in CACHE_DIR.iterdir() if p.is_file()]
+    files.sort(key=lambda p: p.stat().st_mtime)  # 오래된 순
+    for p in files:
+        try:
+            size = p.stat().st_size
+            p.unlink()
+            total -= size
+            if total <= CACHE_MAX_BYTES:
+                break
+        except Exception:
+            continue
+
+
+def download_images_bulk(urls: List[str], max_workers: int = 8, timeout: int = 10, retry: int = 2) -> List[Optional[Path]]:
+    """병렬로 여러 이미지를 다운로드하여 캐시에 저장. 순서 보존된 Path 리스트 반환(실패는 None)."""
+    results = [None] * len(urls)
+    session = requests.Session()
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        future_to_idx = {ex.submit(_download_single, url, timeout, retry, session): idx for idx, url in enumerate(urls)}
+        for fut in as_completed(future_to_idx):
+            idx = future_to_idx[fut]
+            try:
+                results[idx] = fut.result()
+            except Exception:
+                results[idx] = None
+    # 다운로드 이후 캐시 용량 초과 시 오래된 파일을 삭제하여 제한을 맞춤
+    try:
+        _ensure_cache_under_limit()
+    except Exception:
+        pass
+    return results
