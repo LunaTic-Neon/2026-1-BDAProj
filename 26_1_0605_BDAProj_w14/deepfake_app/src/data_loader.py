@@ -172,3 +172,243 @@ def download_images_bulk(urls: List[str], max_workers: int = 8, timeout: int = 1
     except Exception:
         pass
     return results
+
+
+import json
+import random
+from typing import Tuple
+
+
+def normalize_label(df: pd.DataFrame, label_col: str = "label", mapping: Optional[dict] = None) -> pd.DataFrame:
+    """라벨 정규화: 매핑을 적용하거나 간단한 규칙으로 'FAKE'/'REAL'로 변환 시도.
+
+    매핑이 주어지면 먼저 적용하고, 그렇지 않으면 문자열 패턴(fake/real 등)을 통해 자동 매핑을 시도합니다.
+    """
+    if label_col not in df.columns:
+        return df
+    if mapping:
+        df[label_col] = df[label_col].map(mapping).fillna(df[label_col])
+        return df
+
+    # 자동 매핑 시도
+    unique_vals = df[label_col].dropna().unique()
+    auto_map = {}
+    for v in unique_vals:
+        s = str(v).lower()
+        if "fake" in s or "deep" in s or "synth" in s or "generated" in s:
+            auto_map[v] = "FAKE"
+        elif "real" in s or "auth" in s or "original" in s or "orig" in s:
+            auto_map[v] = "REAL"
+    if auto_map:
+        df[label_col] = df[label_col].map(auto_map).fillna(df[label_col])
+    return df
+
+
+def save_report_json(report: dict, out_path: str):
+    p = Path(out_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    return str(p)
+
+
+def validate_metadata(df: pd.DataFrame,
+                      date_cols: Optional[List[str]] = None,
+                      required_cols: Optional[List[str]] = None,
+                      dup_subset: Optional[List[str]] = None,
+                      save_report: Optional[str] = None) -> Tuple[pd.DataFrame, dict]:
+    """간단한 메타데이터 검증 및 정규화
+
+    수행 내용:
+      - 컬럼별 결측치 집계
+      - 필수 컬럼 누락/결측 체크
+      - 중복 제거(옵션)
+      - 날짜 파싱(date_cols 목록이 주어지면 _parsed 컬럼 추가)
+      - 라벨 정규화 시도
+
+    반환: (cleaned_df, report_dict)
+    """
+    report = {}
+    report["shape_before"] = df.shape
+    report["missing_by_col"] = df.isnull().sum().to_dict()
+
+    if required_cols:
+        missing_required = {c: int(df[c].isnull().sum()) if c in df.columns else None for c in required_cols}
+        report["missing_required"] = missing_required
+
+    if dup_subset is None:
+        dup_subset = ["image_url"] if "image_url" in df.columns else None
+    if dup_subset is not None:
+        dup_count = int(df.duplicated(subset=dup_subset).sum())
+        report["duplicate_count"] = dup_count
+        if dup_count > 0:
+            df = df.drop_duplicates(subset=dup_subset).reset_index(drop=True)
+    else:
+        report["duplicate_count"] = 0
+
+    # 날짜 파싱
+    if date_cols:
+        for dc in date_cols:
+            if dc in df.columns:
+                parsed = pd.to_datetime(df[dc], errors="coerce")
+                df[f"{dc}_parsed"] = parsed
+                report[f"{dc}_parsed_na"] = int(parsed.isnull().sum())
+
+    # 라벨 정규화 시도
+    if "label" in df.columns:
+        before = df["label"].unique().tolist()
+        df = normalize_label(df, "label")
+        after = df["label"].unique().tolist()
+        report["label_unique_before"] = before
+        report["label_unique_after"] = after
+
+    report["shape_after"] = df.shape
+
+    if save_report:
+        try:
+            save_report_json(report, save_report)
+        except Exception:
+            pass
+
+    return df, report
+
+
+def _url_health_check(url: str, timeout: int = 5) -> dict:
+    """단일 URL에 대해 빠르게 상태를 확인. HEAD 요청을 우선 시도하고 실패 시 GET으로 폴백.
+
+    반환 dict: {ok: bool, status: Optional[int], content_type: Optional[str], error: Optional[str]}
+    """
+    if not url or not isinstance(url, str):
+        return {"ok": False, "status": None, "content_type": None, "error": "invalid_url"}
+    try:
+        resp = requests.head(url, allow_redirects=True, timeout=timeout)
+        status = getattr(resp, "status_code", None)
+        ctype = resp.headers.get("content-type") if resp is not None else None
+        # 4xx/5xx이면 GET으로 확인
+        if status is None or status >= 400:
+            resp2 = requests.get(url, stream=True, timeout=timeout)
+            status = getattr(resp2, "status_code", None)
+            ctype = resp2.headers.get("content-type") if resp2 is not None else ctype
+        ok = (status is not None and status < 400)
+        return {"ok": ok, "status": status, "content_type": ctype, "error": None}
+    except Exception as e:
+        return {"ok": False, "status": None, "content_type": None, "error": str(e)}
+
+
+def validate_urls(df: pd.DataFrame, url_col: str = "image_url", sample_n: int = 0, max_workers: int = 8, timeout: int = 5) -> pd.DataFrame:
+    """DataFrame의 URL 컬럼에 대해 병렬로 상태 검사 수행.
+
+    sample_n>0이면 랜덤 샘플만 검사(개발 시 빠르게 동작 확인용).
+    반환: 원본 df에 url_ok, url_status, url_content_type, url_error 컬럼을 추가한 복사본.
+    """
+    if url_col not in df.columns:
+        raise ValueError(f"{url_col} not in dataframe")
+    df_out = df.copy()
+    idxs = list(range(len(df_out)))
+    if sample_n and sample_n > 0:
+        idxs = random.sample(idxs, min(sample_n, len(idxs)))
+
+    results = {i: {"ok": None, "status": None, "content_type": None, "error": None} for i in idxs}
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        future_to_idx = {ex.submit(_url_health_check, df_out.at[i, url_col], timeout): i for i in idxs}
+        for fut in as_completed(future_to_idx):
+            i = future_to_idx[fut]
+            try:
+                res = fut.result()
+                results[i] = res
+            except Exception as e:
+                results[i] = {"ok": False, "status": None, "content_type": None, "error": str(e)}
+
+    # 컬럼 채우기 (샘플 검사인 경우 해당 인덱스만 채움)
+    ok_col = []
+    status_col = []
+    ctype_col = []
+    err_col = []
+    for i in range(len(df_out)):
+        r = results.get(i)
+        if r is None:
+            ok_col.append(None)
+            status_col.append(None)
+            ctype_col.append(None)
+            err_col.append(None)
+        else:
+            ok_col.append(r.get("ok"))
+            status_col.append(r.get("status"))
+            ctype_col.append(r.get("content_type"))
+            err_col.append(r.get("error"))
+    df_out["url_ok"] = ok_col
+    df_out["url_status"] = status_col
+    df_out["url_content_type"] = ctype_col
+    df_out["url_error"] = err_col
+    return df_out
+
+
+def download_images_for_df(df, url_col: str = "image_url", image_col: str = "image_path", chunk_size: int = 500,
+                           max_workers: int = 8, timeout: int = 10, retry: int = 2, show_progress: bool = False):
+    """데이터프레임의 URL 컬럼을 청크 단위로 병렬 다운로드하고 image_path 컬럼을 붙여 반환.
+
+    반환: df_copy (image_col 컬럼이 추가되며 다운로드 실패는 None)
+    """
+    if url_col not in df.columns:
+        raise ValueError(f"{url_col} not in dataframe")
+    df_out = df.copy().reset_index(drop=True)
+    n = len(df_out)
+    if n == 0:
+        df_out[image_col] = []
+        return df_out
+
+    prog = None
+    if show_progress:
+        try:
+            import streamlit as st
+            prog = st.progress(0)
+        except Exception:
+            prog = None
+
+    for start in range(0, n, chunk_size):
+        end = min(n, start + chunk_size)
+        urls = df_out.loc[start:end - 1, url_col].tolist()
+        results = download_images_bulk(urls, max_workers=max_workers, timeout=timeout, retry=retry)
+        for i, p in enumerate(results, start=start):
+            df_out.at[i, image_col] = str(p) if p is not None else None
+        if prog is not None:
+            prog.progress(min(100, int((end / n) * 100)))
+
+    try:
+        _ensure_cache_under_limit()
+    except Exception:
+        pass
+
+    return df_out
+
+
+def download_and_validate(df, url_col: str = "image_url", image_col: str = "image_path",
+                          chunk_size: int = 500, max_workers: int = 8, timeout: int = 10, retry: int = 2,
+                          iq_min_width: int = 64, iq_min_height: int = 64, iq_min_sharpness: float = 50.0,
+                          iq_brightness_range: tuple = (10, 245), require_face: bool = False,
+                          validate_sample: int = 0):
+    """편의 함수: 다운로드 -> URL 상태 검사(선택적 샘플) -> 이미지 품질 검사
+
+    반환: (df_with_paths, df_quality_report)
+    """
+    df_paths = download_images_for_df(df, url_col=url_col, image_col=image_col, chunk_size=chunk_size,
+                                      max_workers=max_workers, timeout=timeout, retry=retry)
+
+    if validate_sample and validate_sample > 0:
+        try:
+            df_checked = validate_urls(df_paths, url_col=url_col, sample_n=validate_sample, max_workers=min(8, max_workers))
+            df_paths = df_checked
+        except Exception:
+            pass
+
+    try:
+        from .image_quality import filter_valid_images
+        df_quality = filter_valid_images(df_paths, image_col=image_col, min_width=iq_min_width, min_height=iq_min_height,
+                                         min_sharpness=iq_min_sharpness, min_brightness=iq_brightness_range[0],
+                                         max_brightness=iq_brightness_range[1], require_face=require_face,
+                                         max_workers=max_workers)
+    except Exception:
+        df_quality = df_paths.copy()
+        df_quality["iq_pass"] = None
+
+    return df_paths, df_quality
