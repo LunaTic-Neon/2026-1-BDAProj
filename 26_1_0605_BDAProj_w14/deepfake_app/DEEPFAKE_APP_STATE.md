@@ -130,4 +130,36 @@
 
 ---
 
-문서 추가/수정이 필요하면 형식(체크리스트/스크립트/튜닝 가이드)에 맞춰 바로 반영해 드리겠습니다.
+## 최근 이슈 및 적용된 조치
+- 이슈: Streamlit 실행 중 `ModuleNotFoundError: No module named 'src.face_preprocess'` 발생 (발생 위치: `pages/1_EDA.py`에서 `from src.face_preprocess import detect_and_crop_for_df` 시)
+- 원인: 워크스페이스에 `src/face_preprocess.py`가 없거나 경로 문제로 인해 모듈을 로드하지 못함.
+
+조치 사항(임시)
+- `pages/1_EDA.py`에 안전한 임포트(fallback)를 추가하여 모듈이 없을 때도 페이지가 로드되도록 했습니다:
+  - 동작: `try: from src.face_preprocess import detect_and_crop_for_df` → 실패 시 `detect_and_crop_for_df = None`로 폴백
+  - 결과: ImportError로 앱이 중단되지 않음. 다만 얼굴 전처리 옵션을 선택해도 실제 검출은 수행되지 않고 원본 이미지로 특성 추출이 수행되거나 경고를 표시하게 됩니다.
+
+영구 해결(권장)
+1) 빠른 해결 — 최소 스텁(stub) 추가
+   - 파일: `deepfake_app/src/face_preprocess.py`
+   - 내용: 얼굴 검출 기능을 수행하지 않는 안전한 스텁 함수(`detect_and_crop_for_df`)를 구현하여 `face_path`, `face_bbox`, `face_found` 컬럼을 반환하도록 합니다. (이는 import 오류를 제거하고 UI 흐름을 복구합니다.)
+   - 장점: 의존성 없이 즉시 작동, EDA와 특성 추출 플로우 테스트 가능
+
+2) 완전 구현 — 실제 얼굴 검출 기능 추가
+   - 파일: `deepfake_app/src/face_preprocess.py`에 RetinaFace/MTCNN/OpenCV 기반 검출 로직 구현(이미 준비된 템플릿 있음)
+   - 요구 사항: `facenet-pytorch`, `retina-face`, `opencv-python` 등 설치(환경에 따라 GPU 활용 가능)
+   - 장점: face crop을 생성하여 `face_path`를 특성 추출에 활용, 모델 입력 전처리 품질 향상
+
+테스트 및 검증 순서
+1. (스텁 추가 후) Streamlit 앱 실행: `streamlit run app.py` — `pages/1_EDA.py`가 정상 로드되는지 확인
+2. EDA 페이지에서 '샘플 캐시 생성' 버튼 클릭 → 캐시가 채워지는지 확인
+3. 특성 추출 버튼 클릭(얼굴 크롭 옵션 사용) — 스텁이면 face_path 컬럼이 None이므로 원본 `image_path`로 특성 추출됨. 오류 없이 CSV가 생성되는지 확인
+4. (완전 구현 후) 얼굴 검출이 정상 동작하는지, `data/cache/crops/`에 크롭 이미지가 생성되는지 확인
+
+권장 다음 단계(우선순위)
+- 1순위: 최소 스텁을 즉시 추가하여 개발·테스트 흐름을 복구하세요. 제가 원하시면 지금 파일을 생성해 드립니다.
+- 2순위: 의존성(특히 facenet-pytorch/retina-face)을 설치 가능한 환경에서 실제 검출 구현을 배치하세요.
+- 3순위: 얼굴 검출이 활성화되면 `pages/1_EDA.py`의 특성 추출 UI에서 `face_path`를 우선 사용하도록 한 동작을 재검증하세요.
+
+추가 도움
+- 제가 지금 바로 프로젝트에 안전한 스텁(`deepfake_app/src/face_preprocess.py`)을 생성해 드릴까요? 또는 완전 구현 템플릿을 추가할까요? 원하는 옵션(A: 스텁 / B: 풀 구현 템플릿)을 알려주시면 바로 생성하겠습니다.

@@ -24,7 +24,11 @@ from src.data_loader import (
     LEAKAGE_COLS,
     set_cache_max_bytes,
 )
-from src.face_preprocess import detect_and_crop_for_df
+# optional face_preprocess import: 모듈이 없으면 None으로 폴백
+try:
+    from src.face_preprocess import detect_and_crop_for_df
+except Exception:
+    detect_and_crop_for_df = None
 
 import numpy as np
 
@@ -199,13 +203,43 @@ else:
 max_display = min(len(sample_df), 100)
 sample_df = sample_df.head(max_display).reset_index(drop=True)
 
+# --- 캐시 유틸: 캐시에 이미 존재하는 로컬 경로를 우선 사용 ---
+from src.data_loader import _url_to_name, CACHE_DIR, download_images_for_df
+
+def _find_cached_path(url):
+    try:
+        if not url or not isinstance(url, str):
+            return None
+        p = Path(CACHE_DIR) / _url_to_name(url)
+        return str(p) if p.exists() else None
+    except Exception:
+        return None
+
+# 사용자가 샘플을 미리 캐시하도록 버튼 제공
+if st.button("샘플 캐시 생성 (선택 샘플만)"):
+    with st.spinner("샘플 이미지를 캐시에 저장하는 중... 잠시만요"):
+        try:
+            sample_df = download_images_for_df(sample_df, url_col="image_url", image_col="image_path", max_workers=max_workers)
+            st.success("샘플 캐시 생성 완료")
+        except Exception:
+            st.warning("샘플 캐시 생성 실패. 네트워크/권한을 확인하세요.")
+
 # batch download URLs to cache (non-blocking UX note)
-urls = sample_df["image_url"].fillna("").tolist() if "image_url" in sample_df.columns else [""] * len(sample_df)
-if any(urls):
+# 우선 캐시 경로가 있으면 사용하고, 없으면 download_images_for_df로 채웁니다
+paths = [ _find_cached_path(u) for u in sample_df["image_url"].fillna("").tolist() ]
+need_download = any(p is None for p in paths)
+if need_download:
     with st.spinner("샘플 이미지를 캐시에서 불러오거나 다운로드 중... 잠시만요"):
-        paths = download_images_bulk(urls, max_workers=max_workers)
+        try:
+            df_paths = download_images_for_df(sample_df, url_col="image_url", image_col="image_path", max_workers=max_workers)
+            paths = df_paths["image_path"].tolist()
+        except Exception:
+            # 최후의 수단: 기존 병렬 다운로드로 시도
+            urls = sample_df["image_url"].fillna("").tolist() if "image_url" in sample_df.columns else [""] * len(sample_df)
+            paths = download_images_bulk(urls, max_workers=max_workers)
 else:
-    paths = [None] * len(urls)
+    # 모두 캐시에 존재하면 paths 그대로 사용
+    pass
 
 # attach local cached paths to sample_df for later processing
 sample_df = sample_df.reset_index(drop=True)
@@ -319,7 +353,7 @@ if st.button("선택 샘플 특징 추출 시작"):
         else:
             start = time.time()
             # optional: 얼굴 검출 및 크롭 수행
-            if use_face_crop:
+            if use_face_crop and detect_and_crop_for_df is not None:
                 try:
                     st.info("얼굴 검출 및 크롭을 수행합니다. (시간이 걸릴 수 있습니다)")
                     proc_df_crops = detect_and_crop_for_df(proc_df, image_col="image_path", id_col=("image_id" if "image_id" in proc_df.columns else None),
