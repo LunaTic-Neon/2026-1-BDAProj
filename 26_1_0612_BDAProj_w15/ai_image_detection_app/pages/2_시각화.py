@@ -1,5 +1,6 @@
 ﻿import os
 import sys
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -44,6 +45,34 @@ st.info(
     "핵심 해석: 이 데이터는 영상 기반 탐지보다 URL 기반 얼굴 이미지의 "
     "AI 활용 가능성, 즉 실사(REAL)와 생성/아바타 계열(FAKE) 구분 문제에 가깝습니다."
 )
+
+app_dir = Path(os.path.dirname(os.path.dirname(__file__)))
+feature_files = sorted((app_dir / "data").glob("features_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+if feature_files:
+    with st.expander("추출된 특징 파일 추가 분석", expanded=False):
+        selected_feature_file = st.selectbox(
+            "특징 파일 선택",
+            feature_files,
+            format_func=lambda p: p.name,
+        )
+        feat_df = pd.read_csv(selected_feature_file)
+        st.write(f"선택 파일: `{selected_feature_file.name}` / {len(feat_df):,}행")
+        feature_plot_cols = [c for c in ["brightness", "sharpness", "face_area_ratio", "mean_pixel", "std_pixel", "avg_r", "avg_g", "avg_b"] if c in feat_df.columns]
+        if feature_plot_cols:
+            selected_features = st.multiselect("특징 분포 확인", feature_plot_cols, default=feature_plot_cols[:3])
+            for feature in selected_features:
+                fig = px.histogram(
+                    feat_df,
+                    x=feature,
+                    color=("label" if "label" in feat_df.columns else None),
+                    nbins=30,
+                    title=f"{feature} 특징 분포",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("선택한 특징 파일에 시각화 가능한 기본 이미지 특징 컬럼이 없습니다.")
+else:
+    st.caption("추출된 특징 파일이 없으면 EDA 페이지에서 특징추출을 실행하거나 `python -m src.feature_pipeline`을 사용해 주세요.")
 
 total_rows = len(df)
 label_counts = df["label"].value_counts() if "label" in df.columns else pd.Series(dtype=int)

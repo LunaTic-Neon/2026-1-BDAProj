@@ -14,6 +14,7 @@ import os
 import time
 from datetime import datetime
 from src.features import batch_extract_features, save_features, url_domain
+from src.image_quality import filter_valid_images
 from src.data_loader import (
     load_data,
     data_missing_message,
@@ -360,10 +361,16 @@ with col_tool_right:
 # ------------------------ 특성 추출 자동화 버튼 --------------------------
 st.markdown("---")
 st.header("5. 특성 추출 자동화 (선택 샘플에 대해)")
-st.caption("선택된 스냅샷(썸네일로 표시된 샘플)에 대해 features를 병렬 추출하고 CSV로 저장합니다.")
-# 옵션: 얼굴 크롭 선행 여부 선택
-use_face_crop = st.checkbox("얼굴 검출 및 크롭 후 특성 추출 (가능하면 face_path 우선)", value=True)
-require_face_for_crop = st.checkbox("크롭 시 얼굴 필수(얼굴 없는 이미지는 건너뜀)", value=False)
+st.caption("선택된 스냅샷에 대해 다운로드 상태, 이미지 품질, 얼굴 크롭, 기본 특징추출을 순서대로 수행하고 CSV로 저장합니다.")
+pre_left, pre_right = st.columns(2)
+with pre_left:
+    use_quality_check = st.checkbox("이미지 품질 검사 후 통과 이미지로 특징 추출", value=True)
+    use_face_crop = st.checkbox("얼굴 검출 및 크롭 후 특성 추출", value=True)
+    require_face_for_crop = st.checkbox("얼굴 필수(얼굴 없는 이미지는 제외)", value=False)
+with pre_right:
+    iq_min_width = st.number_input("최소 가로 크기", min_value=32, value=64, step=16)
+    iq_min_height = st.number_input("최소 세로 크기", min_value=32, value=64, step=16)
+    iq_min_sharpness = st.number_input("최소 선명도", min_value=0.0, value=20.0, step=5.0)
 if st.button("선택 샘플 특징 추출 시작"):
     with st.spinner("특성 추출 중... (이미지가 많으면 시간이 걸립니다)"):
         # require image_path column
@@ -372,6 +379,21 @@ if st.button("선택 샘플 특징 추출 시작"):
             st.error("추출할 로컬 이미지 경로가 없습니다. 먼저 썸네일을 캐시하여 로컬 경로를 확보하세요.")
         else:
             start = time.time()
+            if use_quality_check:
+                proc_df = filter_valid_images(
+                    proc_df,
+                    image_col="image_path",
+                    min_width=int(iq_min_width),
+                    min_height=int(iq_min_height),
+                    min_sharpness=float(iq_min_sharpness),
+                    max_workers=max_workers,
+                )
+                q_pass = int(proc_df["iq_pass"].fillna(False).sum())
+                q_fail = int(len(proc_df) - q_pass)
+                st.write(f"품질 검사 결과: 통과 {q_pass}개 / 실패 {q_fail}개")
+                if q_fail:
+                    st.dataframe(proc_df["iq_reason"].fillna("pass").value_counts().rename_axis("reason").reset_index(name="count"), use_container_width=True)
+                proc_df = proc_df[proc_df["iq_pass"] == True].copy()
             # optional: 얼굴 검출 및 크롭 수행
             if use_face_crop and detect_and_crop_for_df is not None:
                 try:
@@ -382,6 +404,8 @@ if st.button("선택 샘플 특징 추출 시작"):
                     proc_df = proc_df_crops.copy()
                 except Exception as e:
                     st.warning(f"얼굴 전처리 실패: {e} — 원본 이미지로 추출을 계속합니다.")
+            if require_face_for_crop and "face_found" in proc_df.columns:
+                proc_df = proc_df[proc_df["face_found"] == True].copy()
             # decide which column to use for extraction: face_path if available else image_path
             feat_image_col = "face_path" if "face_path" in proc_df.columns and proc_df["face_path"].notnull().any() else "image_path"
             df_feats = batch_extract_features(proc_df, image_col=feat_image_col, nrows=None, n_workers=max_workers)
@@ -390,6 +414,13 @@ if st.button("선택 샘플 특징 추출 시작"):
             save_features(df_feats, out_path)
             elapsed = time.time() - start
             st.success(f"특성 추출 완료: {len(df_feats)}개 행. 소요 {elapsed:.1f}s. 저장: {out_path}")
+            summary_cols = [c for c in ["label", "download_ok", "iq_pass", "iq_reason", "face_found", "face_error", "width", "height", "brightness", "sharpness", "face_area_ratio"] if c in df_feats.columns]
+            if summary_cols:
+                st.dataframe(df_feats[summary_cols].head(30), use_container_width=True)
+            plot_cols = [c for c in ["brightness", "sharpness", "face_area_ratio", "mean_pixel", "std_pixel"] if c in df_feats.columns]
+            for feat in plot_cols[:3]:
+                fig_feat = px.histogram(df_feats, x=feat, color=("label" if "label" in df_feats.columns else None), nbins=30, title=f"{feat} 추출 결과 분포")
+                st.plotly_chart(fig_feat, use_container_width=True)
             st.download_button("Features CSV 다운로드", data=df_feats.to_csv(index=False).encode("utf-8"), file_name=f"features_sample_{ts}.csv")
 
 # ------------------------ 시각화 심화(간단) ------------------------------

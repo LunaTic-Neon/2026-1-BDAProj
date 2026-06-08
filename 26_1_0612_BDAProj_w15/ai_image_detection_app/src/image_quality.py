@@ -95,4 +95,5 @@ def filter_valid_images(df, image_col: str = "image_path", min_width: int = 64, 
     df_out["iq_brightness"] = [r.get("brightness") if r else None for r in results]
     df_out["iq_width"] = [r.get("width") if r else None for r in results]
     df_out["iq_height"] = [r.get("height") if r else None for r in results]
+    df_out["iq_warning_count"] = df_out["iq_pass"].apply(lambda ok: 0 if ok is True else 1)
     return df_out

@@ -1,0 +1,13 @@
+{
+  "input_rows": 2,
+  "download_ok": 2,
+  "download_failed": 0,
+  "quality_check": true,
+  "quality_pass": 1,
+  "face_crop": false,
+  "face_found": 0,
+  "feature_rows": 1,
+  "elapsed_seconds": 3.66,
+  "output_path": "data\\features_pipeline_smoke.csv",
+  "status": "ok"
+}

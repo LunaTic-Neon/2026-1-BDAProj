@@ -89,7 +89,7 @@ def _download_single(url: str, timeout: int = 10, retry: int = 2, session: Optio
             resp.raise_for_status()
             img = Image.open(BytesIO(resp.content)).convert("RGB")
             tmp = CACHE_DIR / (fname + ".tmp")
-            img.save(tmp)
+            img.save(tmp, format="JPEG")
             tmp.replace(dest)
             return dest
         except Exception:
@@ -368,7 +368,13 @@ def download_images_for_df(df, url_col: str = "image_url", image_col: str = "ima
     n = len(df_out)
     if n == 0:
         df_out[image_col] = []
+        df_out["download_ok"] = []
+        df_out["download_error"] = []
         return df_out
+
+    df_out[image_col] = None
+    df_out["download_ok"] = False
+    df_out["download_error"] = None
 
     prog = None
     if show_progress:
@@ -384,6 +390,8 @@ def download_images_for_df(df, url_col: str = "image_url", image_col: str = "ima
         results = download_images_bulk(urls, max_workers=max_workers, timeout=timeout, retry=retry)
         for i, p in enumerate(results, start=start):
             df_out.at[i, image_col] = str(p) if p is not None else None
+            df_out.at[i, "download_ok"] = p is not None
+            df_out.at[i, "download_error"] = None if p is not None else "download_failed"
         if prog is not None:
             prog.progress(min(100, int((end / n) * 100)))
 
