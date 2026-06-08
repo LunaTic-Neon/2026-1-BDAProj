@@ -10,6 +10,7 @@ import streamlit as st
 
 from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
 from src.features import add_resolution_features, url_domain
+from src.report_sync import find_project_report_path, sync_features_to_report
 
 
 st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
@@ -71,6 +72,18 @@ if feature_files:
                 st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("선택한 특징 파일에 시각화 가능한 기본 이미지 특징 컬럼이 없습니다.")
+        if st.button("선택한 특징 파일을 보고서에 반영"):
+            summary_path = app_dir / "reports" / "feature_pipeline_summary.json"
+            try:
+                report_path = sync_features_to_report(
+                    selected_feature_file,
+                    find_project_report_path(app_dir),
+                    summary_path if summary_path.exists() else None,
+                )
+                st.success(f"보고서 반영 완료: {report_path}")
+            except Exception as e:
+                st.error("보고서 반영 중 오류가 발생했습니다.")
+                st.exception(e)
 else:
     st.caption("추출된 특징 파일이 없으면 EDA 페이지에서 특징추출을 실행하거나 `python -m src.feature_pipeline`을 사용해 주세요.")
 

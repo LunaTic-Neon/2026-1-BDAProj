@@ -8,11 +8,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import torch
+import json
 from PIL import Image
 from transformers import pipeline
 
 from src.data_loader import data_missing_message, fetch_image, load_data
 from src.image_quality import avg_brightness, sharpness_score
+from src.llm_explainer import build_explanation_prompt, check_ollama_status, generate_ollama_explanation
 from src.model_eval import (
     compute_eval_metrics,
     evaluate_image_sample,
@@ -20,6 +22,7 @@ from src.model_eval import (
     normalize_prediction_label,
     sample_evaluation_df,
 )
+from src.report_sync import find_project_report_path, sync_eval_to_report
 
 
 MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-Model"
@@ -121,6 +124,33 @@ def render_prediction_results(results: list):
     with st.expander("원본 모델 출력 확인"):
         st.json(results)
 
+    st.subheader("LLM 결과 해설")
+    use_ollama = st.checkbox("Ollama 해설 사용", value=False)
+    if use_ollama:
+        status = check_ollama_status()
+        if not status["available"]:
+            st.warning("Ollama 서버에 연결할 수 없습니다. 터미널에서 `ollama serve`를 실행하고 `ollama pull llama3.2`로 모델을 설치해 주세요.")
+            st.caption(status.get("error"))
+        else:
+            default_model = "llama3.2"
+            model_options = status["models"] or [default_model]
+            model_name = st.selectbox("Ollama 모델", model_options, index=0)
+            if st.button("해설 생성"):
+                prompt = build_explanation_prompt(
+                    pred_label=predicted_label,
+                    score=score,
+                    confidence=level,
+                    quality_warnings=st.session_state.get("last_quality_warnings", []),
+                    candidate_results=results_df.to_dict("records"),
+                )
+                with st.spinner("Ollama가 해설을 생성하는 중입니다."):
+                    explanation = generate_ollama_explanation(prompt, model_name=model_name)
+                if explanation["ok"]:
+                    st.info(explanation["text"])
+                else:
+                    st.error("Ollama 해설 생성에 실패했습니다.")
+                    st.caption(explanation["error"])
+
 
 def render_single_prediction_tab():
     tab_file, tab_url, tab_demo = st.tabs(["📁 파일 업로드", "🔗 URL 입력", "🧪 데모 샘플"])
@@ -173,6 +203,7 @@ def render_single_prediction_tab():
         st.image(image, caption="입력 이미지", use_container_width=True)
 
     quality = inspect_image_quality(image)
+    st.session_state["last_quality_warnings"] = quality["warnings"]
     with quality_col:
         q1, q2 = st.columns(2)
         q1.metric("해상도", f"{quality['width']} × {quality['height']}")
@@ -348,6 +379,39 @@ def render_eval_tab():
         file_name="eval_results_sample.csv",
         mime="text/csv",
     )
+
+    report_col1, report_col2 = st.columns(2)
+    with report_col1:
+        if st.button("보고서용 평가 결과 저장"):
+            reports_dir = APP_DIR / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            eval_path = reports_dir / "eval_results_sample.csv"
+            summary_path = reports_dir / "eval_summary.json"
+            eval_df.to_csv(eval_path, index=False, encoding="utf-8-sig")
+            summary_payload = {
+                "attempted": int(metrics["attempted"]),
+                "success": int(metrics["success"]),
+                "failed": int(metrics["failed"]),
+                "accuracy": None if metrics["accuracy"] is None else float(metrics["accuracy"]),
+                "avg_score": None if metrics["avg_score"] is None else float(metrics["avg_score"]),
+                "wrong_count": int(((eval_df["error"].isna()) & (eval_df["is_correct"] == False)).sum()),
+                "status": "saved",
+            }
+            summary_path.write_text(json.dumps(summary_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            st.success(f"저장 완료: {eval_path}")
+    with report_col2:
+        if st.button("평가 결과를 보고서에 반영"):
+            eval_path = APP_DIR / "reports" / "eval_results_sample.csv"
+            summary_path = APP_DIR / "reports" / "eval_summary.json"
+            if not eval_path.exists():
+                st.warning("먼저 `보고서용 평가 결과 저장`을 눌러 평가 결과 파일을 생성해 주세요.")
+            else:
+                try:
+                    report_path = sync_eval_to_report(eval_path, find_project_report_path(APP_DIR), summary_path)
+                    st.success(f"보고서 반영 완료: {report_path}")
+                except Exception as e:
+                    st.error("보고서 반영 중 오류가 발생했습니다.")
+                    st.exception(e)
 
 
 st.title("🕵️ 모델 · 서비스 (AI 활용 이미지 판별)")
