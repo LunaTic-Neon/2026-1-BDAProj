@@ -22,10 +22,11 @@ deepfake_app/
 ├── pages/
 │   ├── 1_EDA.py          # 데이터 요약·결측·분포 (1차 작업)
 │   ├── 2_시각화.py        # 인사이트 그래프 (2차 작업)
-│   └── 3_모델_서비스.py   # 이미지 입력 → ViT 예측 → 결과 (3차 작업)
+│   └── 3_모델_서비스.py   # 단일 이미지 판별 + 샘플 성능 평가
 ├── src/
 │   ├── data_loader.py    # CSV 적재 + 이미지 URL 다운로드 (@st.cache_data)
 │   ├── face_preprocess.py # 얼굴 검출·크롭 보조 유틸
+│   ├── model_eval.py     # 샘플 평가 유틸
 │   └── features.py       # 정제·특성 (2차 작업)
 ├── data/
 │   └── FINAL_DATASET.csv # Kaggle Deepfake Detection Dataset 2026 (gitignore)
@@ -38,8 +39,23 @@ deepfake_app/
 - 이미지는 CSV의 `image_url`로 제공되어 실행 시 다운로드합니다.
 - 데이터 파일(`data/*.csv`)은 용량 문제로 git에서 제외됩니다.
 
+## 모델·서비스 기능
+
+- 단일 이미지 판별: 파일 업로드, URL 입력, 로컬 데모 샘플 입력을 지원합니다.
+- 품질 점검: 해상도, 종횡비, 밝기, 선명도 기준으로 입력 이미지 경고를 표시합니다.
+- 샘플 성능 평가: `FINAL_DATASET.csv`의 일부 샘플을 다운로드해 실제 라벨과 모델 예측을 비교합니다.
+- 평가 결과: accuracy, confusion matrix, 클래스별 요약, 오분류 사례, CSV 다운로드를 제공합니다.
+
+발표용 샘플 이미지는 아래 폴더에 넣으면 앱에서 자동으로 선택할 수 있습니다.
+
+```
+data/demo_samples/
+├── real/
+└── fake/
+```
+
 ## 진행 상태
 
 - [x] 앱 골격 + EDA 페이지 착수 (1차 작업)
 - [x] 시각화 페이지 + 전처리 안정화 (2차 작업)
-- [ ] 판별 서비스 MVP (3차 작업)
+- [x] 판별 서비스 MVP + 샘플 평가 기능 (3차 작업)
