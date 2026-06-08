@@ -1,8 +1,10 @@
-# 딥페이크 이미지 판별 앱
+# AI 합성 이미지 판별 앱
 
-이미지가 AI 합성(FAKE)인지 실제 사진(REAL)인지 판별하는 Streamlit 웹 앱입니다.
+얼굴 이미지가 AI 합성/아바타 계열 이미지(FAKE)인지 실제 사진(REAL)인지 판별하는 Streamlit 웹 앱입니다.
 `project_template`을 복사해 시작했으며, 이미지 데이터(CSV+URL)에 맞게 `data_loader.py`·`1_EDA.py`를 교체했습니다.
 문제정의는 [`../문제정의.md`](../문제정의.md) 참고.
+
+> 이 프로젝트는 영상 기반 딥페이크 탐지가 아니라, URL 기반 얼굴 이미지의 실사/생성 이미지 구분 문제에 가깝습니다.
 
 ## 실행
 
@@ -23,6 +25,7 @@ deepfake_app/
 │   └── 3_모델_서비스.py   # 이미지 입력 → ViT 예측 → 결과 (3차 작업)
 ├── src/
 │   ├── data_loader.py    # CSV 적재 + 이미지 URL 다운로드 (@st.cache_data)
+│   ├── face_preprocess.py # 얼굴 검출·크롭 보조 유틸
 │   └── features.py       # 정제·특성 (2차 작업)
 ├── data/
 │   └── FINAL_DATASET.csv # Kaggle Deepfake Detection Dataset 2026 (gitignore)
@@ -38,5 +41,5 @@ deepfake_app/
 ## 진행 상태
 
 - [x] 앱 골격 + EDA 페이지 착수 (1차 작업)
-- [ ] 시각화 페이지 + 전처리 (2차 작업)
+- [x] 시각화 페이지 + 전처리 안정화 (2차 작업)
 - [ ] 판별 서비스 MVP (3차 작업)

@@ -23,12 +23,25 @@ DATA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "FI
 LEAKAGE_COLS = ["category", "source", "fake_method", "detection_difficulty"]
 
 
+def data_missing_message() -> str:
+    app_dir = Path(os.path.dirname(os.path.dirname(__file__)))
+    rel_path = Path("data") / "FINAL_DATASET.csv"
+    return (
+        "데이터 파일을 찾을 수 없습니다.\n\n"
+        f"- 필요한 위치: {app_dir / rel_path}\n"
+        "- 해결 방법: Kaggle 원본 CSV 또는 로컬 CSV를 deepfake_app/data/FINAL_DATASET.csv 경로에 넣어 주세요.\n"
+        "- 데이터 파일은 용량 문제로 git에서 제외될 수 있으므로 제출/실행 PC에서 별도로 배치해야 합니다."
+    )
+
+
 @st.cache_data   # CSV(메타데이터)만 읽는다 — 이미지는 fetch_image()로 필요할 때만
 def load_data(nrows=None):
     """FINAL_DATASET.csv 적재.
 
     nrows: 개발 중 일부만 빠르게 불러올 때 지정 (가이드 FAQ 권장).
     """
+    if not Path(DATA_PATH).exists():
+        raise FileNotFoundError(data_missing_message())
     return pd.read_csv(DATA_PATH, nrows=nrows)
 
 

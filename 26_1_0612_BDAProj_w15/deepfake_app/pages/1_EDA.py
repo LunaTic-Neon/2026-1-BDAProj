@@ -16,6 +16,7 @@ from datetime import datetime
 from src.features import batch_extract_features, save_features
 from src.data_loader import (
     load_data,
+    data_missing_message,
     fetch_image,
     download_images_bulk,
     CACHE_DIR,
@@ -32,9 +33,7 @@ except Exception:
 
 import numpy as np
 
-st.set_page_config(layout="wide")
-
-st.title("📊 이미지 EDA — 완전 구현")
+st.title("📊 이미지 EDA — AI 합성 이미지 판별")
 
 # thumbnail 기본 크기 (페이지 전체에서 재사용)
 THUMB_W = 320
@@ -69,7 +68,16 @@ else:
 def _load(nrows):
     return load_data(nrows)
 
-df = _load(rows_opt)
+try:
+    df = _load(rows_opt)
+except FileNotFoundError:
+    st.error("데이터 파일이 없어 EDA를 진행할 수 없습니다.")
+    st.code(data_missing_message(), language="text")
+    st.stop()
+except Exception as e:
+    st.error("데이터를 불러오는 중 오류가 발생했습니다.")
+    st.exception(e)
+    st.stop()
 
 # populate label choices now that df loaded
 labels = sorted(df["label"].dropna().unique()) if "label" in df.columns else []

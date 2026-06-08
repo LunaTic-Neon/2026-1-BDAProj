@@ -1,56 +1,207 @@
-# pages/2_시각화.py — 2차 작업: 그래프로 인사이트 찾기
-# 4주차에서 배운 plotly/altair 를 씁니다. 그래프마다 "그래서 무엇"을 한 줄 적으세요.
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-import streamlit as st
+import pandas as pd
 import plotly.express as px
+import streamlit as st
 
-from src.data_loader import load_data
+from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
 from src.features import url_domain
 
-st.title("📈 시각화")
 
-df = load_data()
-df = df.assign(domain=url_domain(df))   # 출처 도메인 파생 컬럼 추가
+st.title("📈 시각화 — 인사이트 대시보드")
+st.caption("데이터 분포, 출처 편향, 누수 가능 컬럼을 확인하여 모델 입력에 쓰면 안 되는 정보를 구분합니다.")
 
-# 분석에 쓸 컬럼을 사용자가 고르게
-# 제외할 컬럼 목록
-EXCLUDE_VIS_COLS = [
-    "image_id", "image_url", "label_numeric", "category", "source",
-    "fake_method", "date_collected", "version", "year", "domain"
-]
-# 시각화에서 사용할 컬럼 목록(제외 리스트 적용)
-cols = [c for c in df.columns.tolist() if c not in EXCLUDE_VIS_COLS]
 
-st.header("그래프 1 — 분포")
-# 기본값이 없는 경우를 안전하게 처리
+@st.cache_data
+def _load_data():
+    return load_data()
+
+
 try:
-    default_idx = cols.index("label")
-except ValueError:
-    default_idx = 0
-col1 = st.selectbox("볼 컬럼", cols, index=default_idx, key="hist")
-fig1 = px.histogram(df, x=col1, color="label", title=f"{col1} 분포")
-st.plotly_chart(fig1, use_container_width=True)
-st.caption("해석: (이 그래프에서 무엇을 알 수 있나? 한 줄)")  # TODO
+    df = _load_data()
+except FileNotFoundError:
+    st.error("데이터 파일이 없어 시각화를 진행할 수 없습니다.")
+    st.code(data_missing_message(), language="text")
+    st.stop()
+except Exception as e:
+    st.error("데이터를 불러오는 중 오류가 발생했습니다.")
+    st.exception(e)
+    st.stop()
 
-st.header("그래프 2 — 관계")
-c1, c2 = st.columns(2)
-# X, Y 선택 시에도 제외 리스트 적용
-try:
-    x_default = cols.index("age_group")
-except ValueError:
-    x_default = 0
-try:
-    y_default = cols.index("image_quality")
-except ValueError:
-    y_default = 0
-x = c1.selectbox("X축", cols, index=x_default, key="x")
-y = c2.selectbox("Y축", cols, index=y_default, key="y")
-fig2 = px.histogram(df, x=x, color=y, barmode="group", title=f"{x} × {y}")
-st.plotly_chart(fig2, use_container_width=True)
-st.caption("해석: (X와 Y 사이에 관계가 보이나? 한 줄)")  # TODO
+if "image_url" in df.columns:
+    df = df.assign(domain=url_domain(df))
+else:
+    df = df.assign(domain="UNKNOWN")
 
-# TODO: 출처 도메인(domain)별 FAKE/REAL 비율, confidence_score 분포 등을 추가하면 인사이트가 잘 보입니다.
-#   px.histogram(df, x="domain", color="label")
+if "label" in df.columns:
+    df["label"] = df["label"].astype(str).str.upper()
+
+st.info(
+    "핵심 해석: 이 데이터는 영상 기반 딥페이크 탐지보다 URL 기반 얼굴 이미지의 "
+    "실사(REAL)와 생성/아바타 계열(FAKE) 구분 문제에 가깝습니다."
+)
+
+total_rows = len(df)
+label_counts = df["label"].value_counts() if "label" in df.columns else pd.Series(dtype=int)
+fake_count = int(label_counts.get("FAKE", 0))
+real_count = int(label_counts.get("REAL", 0))
+
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+kpi1.metric("전체 행 수", f"{total_rows:,}")
+kpi2.metric("FAKE 수", f"{fake_count:,}")
+kpi3.metric("REAL 수", f"{real_count:,}")
+if fake_count + real_count:
+    kpi4.metric("FAKE 비율", f"{fake_count / (fake_count + real_count) * 100:.1f}%")
+else:
+    kpi4.metric("FAKE 비율", "-")
+
+st.markdown("---")
+
+st.header("1. 라벨 분포")
+if "label" in df.columns and not label_counts.empty:
+    label_df = label_counts.rename_axis("label").reset_index(name="count")
+    label_df["ratio"] = label_df["count"] / label_df["count"].sum() * 100
+    fig = px.bar(label_df, x="label", y="count", color="label", text="count", title="FAKE/REAL 샘플 수")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(label_df, use_container_width=True)
+    st.success("해석: FAKE가 REAL보다 많지만 극단적인 불균형은 아니므로, 성능 평가에서는 accuracy와 함께 F1/recall도 확인하는 것이 좋습니다.")
+else:
+    st.warning("label 컬럼이 없어 라벨 분포를 표시할 수 없습니다.")
+
+st.markdown("---")
+
+st.header("2. 이미지 품질과 라벨 관계")
+if {"image_quality", "label"}.issubset(df.columns):
+    quality_df = (
+        df.assign(image_quality=df["image_quality"].fillna("UNKNOWN"))
+        .groupby(["image_quality", "label"])
+        .size()
+        .reset_index(name="count")
+    )
+    fig = px.bar(
+        quality_df,
+        x="image_quality",
+        y="count",
+        color="label",
+        barmode="group",
+        title="image_quality별 FAKE/REAL 분포",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("해석: 특정 품질 등급이 특정 라벨에 몰려 있다면, 모델이 이미지 조작 흔적보다 품질 차이를 학습할 위험이 있습니다.")
+else:
+    st.info("image_quality 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
+
+st.markdown("---")
+
+st.header("3. confidence_score 분포")
+if {"confidence_score", "label"}.issubset(df.columns):
+    score_df = df.copy()
+    score_df["confidence_score"] = pd.to_numeric(score_df["confidence_score"], errors="coerce")
+    score_df = score_df.dropna(subset=["confidence_score"])
+    if len(score_df):
+        tab_hist, tab_box = st.tabs(["히스토그램", "박스플롯"])
+        with tab_hist:
+            fig = px.histogram(
+                score_df,
+                x="confidence_score",
+                color="label",
+                nbins=25,
+                barmode="overlay",
+                title="label별 confidence_score 분포",
+            )
+            fig.update_traces(opacity=0.72)
+            st.plotly_chart(fig, use_container_width=True)
+        with tab_box:
+            fig = px.box(score_df, x="label", y="confidence_score", color="label", title="label별 confidence_score 비교")
+            st.plotly_chart(fig, use_container_width=True)
+        st.caption("해석: confidence_score가 라벨별로 다르게 분포하면 데이터 생성·수집 과정의 편향을 의심할 수 있습니다.")
+    else:
+        st.info("confidence_score를 숫자로 변환할 수 있는 행이 없습니다.")
+else:
+    st.info("confidence_score 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
+
+st.markdown("---")
+
+st.header("4. FAKE 생성 방식 분석")
+if {"fake_method", "label"}.issubset(df.columns):
+    fake_df = df[df["label"].astype(str).str.upper() == "FAKE"].copy()
+    if len(fake_df):
+        method_df = fake_df["fake_method"].fillna("UNKNOWN").value_counts().head(15).rename_axis("fake_method").reset_index(name="count")
+        fig = px.bar(method_df, x="fake_method", y="count", text="count", title="FAKE 데이터 내 fake_method 상위 분포")
+        fig.update_traces(textposition="outside")
+        st.plotly_chart(fig, use_container_width=True)
+        st.warning("fake_method는 정답 라벨과 직접 연결될 가능성이 높으므로 모델 입력에는 사용하지 않고 EDA 분석용으로만 사용합니다.")
+        st.caption("해석: 특정 생성 방식에 FAKE 샘플이 몰려 있으면 실제 다양한 합성 이미지에 대한 일반화 성능이 제한될 수 있습니다.")
+    else:
+        st.info("FAKE 라벨 행이 없어 fake_method 분석을 표시할 수 없습니다.")
+else:
+    st.info("fake_method 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
+
+st.markdown("---")
+
+st.header("5. URL 도메인/출처 편향 분석")
+if {"domain", "label"}.issubset(df.columns):
+    top_n = st.slider("표시할 상위 도메인 수", 5, 30, 12)
+    top_domains = df["domain"].fillna("UNKNOWN").value_counts().head(top_n).index.tolist()
+    domain_df = df[df["domain"].isin(top_domains)].copy()
+    domain_counts = domain_df.groupby(["domain", "label"]).size().reset_index(name="count")
+    fig = px.bar(domain_counts, x="domain", y="count", color="label", barmode="stack", title="상위 도메인별 FAKE/REAL 분포")
+    fig.update_layout(xaxis_tickangle=-35)
+    st.plotly_chart(fig, use_container_width=True)
+
+    ratio_table = pd.crosstab(domain_df["domain"], domain_df["label"], normalize="index").fillna(0) * 100
+    st.dataframe(ratio_table.round(1), use_container_width=True)
+    st.warning("해석: REAL과 FAKE가 서로 다른 도메인에서 주로 수집되었다면, 도메인/source 정보는 모델 입력에서 제외해야 합니다.")
+else:
+    st.info("domain 또는 label 컬럼이 없어 도메인 편향 분석을 표시할 수 없습니다.")
+
+st.markdown("---")
+
+st.header("6. 누수 가능 컬럼 진단")
+st.write("아래 컬럼은 label과 거의 직접 연결될 수 있으므로, 모델 학습/예측 입력에서는 제외하는 것이 원칙입니다.")
+available_leakage_cols = [col for col in LEAKAGE_COLS if col in df.columns]
+if available_leakage_cols and "label" in df.columns:
+    selected_leakage_col = st.selectbox("진단할 누수 가능 컬럼", available_leakage_cols)
+    cross = pd.crosstab(df[selected_leakage_col].fillna("UNKNOWN"), df["label"], margins=True)
+    ratio = pd.crosstab(df[selected_leakage_col].fillna("UNKNOWN"), df["label"], normalize="index").fillna(0) * 100
+    left, right = st.columns(2)
+    with left:
+        st.subheader("개수")
+        st.dataframe(cross, use_container_width=True)
+    with right:
+        st.subheader("행 기준 비율(%)")
+        st.dataframe(ratio.round(1), use_container_width=True)
+    st.error("모델에 이 컬럼을 넣으면 성능이 좋아 보일 수 있지만, 실제 이미지 판별 능력이 아니라 정답 힌트를 외운 결과일 수 있습니다.")
+else:
+    st.info("진단 가능한 누수 컬럼 또는 label 컬럼이 없습니다.")
+
+st.markdown("---")
+
+st.header("7. 추가 탐색 그래프")
+exclude_vis_cols = {
+    "image_id",
+    "image_url",
+    "label_numeric",
+    "category",
+    "source",
+    "fake_method",
+    "date_collected",
+    "version",
+    "year",
+    "domain",
+}
+candidate_cols = [col for col in df.columns if col not in exclude_vis_cols]
+if candidate_cols:
+    default_col = "label" if "label" in candidate_cols else candidate_cols[0]
+    selected_col = st.selectbox("분포를 볼 컬럼", candidate_cols, index=candidate_cols.index(default_col))
+    color_col = "label" if "label" in df.columns and selected_col != "label" else None
+    fig = px.histogram(df, x=selected_col, color=color_col, title=f"{selected_col} 분포")
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("추가 탐색용 그래프입니다. 보고서에는 위의 고정 인사이트 그래프를 우선 사용하는 것을 추천합니다.")
+else:
+    st.info("추가 탐색에 사용할 컬럼이 없습니다.")

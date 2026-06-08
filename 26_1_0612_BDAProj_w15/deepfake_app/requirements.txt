@@ -5,3 +5,7 @@ pillow
 requests
 transformers
 torch
+numpy
+tqdm
+opencv-python
+pyarrow
