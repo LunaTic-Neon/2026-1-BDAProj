@@ -11,10 +11,12 @@ import streamlit as st
 from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
 from src.features import add_resolution_features, url_domain
 from src.report_sync import find_project_report_path, sync_features_to_report
+from src.ui_components import render_leakage_warning, render_project_notice
 
 
 st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
 st.caption("데이터 분포, 출처 편향, 누수 가능 컬럼을 확인하여 모델 입력에 쓰면 안 되는 정보를 구분합니다.")
+render_project_notice()
 
 
 @st.cache_data
@@ -58,18 +60,32 @@ if feature_files:
         )
         feat_df = pd.read_csv(selected_feature_file)
         st.write(f"선택 파일: `{selected_feature_file.name}` / {len(feat_df):,}행")
+        feat_cards = st.columns(4)
+        feat_cards[0].metric("특징 행 수", f"{len(feat_df):,}")
+        if "label" in feat_df.columns:
+            feat_cards[1].metric("라벨 종류", f"{feat_df['label'].nunique():,}")
+        if "brightness" in feat_df.columns:
+            feat_cards[2].metric("평균 밝기", f"{feat_df['brightness'].mean():.1f}")
+        if "sharpness" in feat_df.columns:
+            feat_cards[3].metric("평균 선명도", f"{feat_df['sharpness'].mean():.1f}")
         feature_plot_cols = [c for c in ["brightness", "sharpness", "face_area_ratio", "mean_pixel", "std_pixel", "avg_r", "avg_g", "avg_b"] if c in feat_df.columns]
         if feature_plot_cols:
             selected_features = st.multiselect("특징 분포 확인", feature_plot_cols, default=feature_plot_cols[:3])
             for feature in selected_features:
-                fig = px.histogram(
-                    feat_df,
-                    x=feature,
-                    color=("label" if "label" in feat_df.columns else None),
-                    nbins=30,
-                    title=f"{feature} 특징 분포",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                left, right = st.columns(2)
+                with left:
+                    fig = px.histogram(
+                        feat_df,
+                        x=feature,
+                        color=("label" if "label" in feat_df.columns else None),
+                        nbins=30,
+                        title=f"{feature} 특징 분포",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                with right:
+                    if "label" in feat_df.columns:
+                        fig = px.box(feat_df, x="label", y=feature, color="label", title=f"label별 {feature}")
+                        st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("선택한 특징 파일에 시각화 가능한 기본 이미지 특징 컬럼이 없습니다.")
         if st.button("선택한 특징 파일을 보고서에 반영"):
@@ -100,6 +116,20 @@ if fake_count + real_count:
     kpi4.metric("FAKE 비율", f"{fake_count / (fake_count + real_count) * 100:.1f}%")
 else:
     kpi4.metric("FAKE 비율", "-")
+
+st.subheader("핵심 인사이트 요약")
+insight_cols = st.columns(4)
+insight_cols[0].metric("라벨 수", f"FAKE {fake_count:,} / REAL {real_count:,}")
+if {"category", "label"}.issubset(df.columns):
+    category_purity = df.groupby("category")["label"].nunique().eq(1).mean() * 100
+    insight_cols[1].metric("category 순도", f"{category_purity:.0f}%")
+if {"source", "label"}.issubset(df.columns):
+    source_purity = df.groupby("source")["label"].nunique().eq(1).mean() * 100
+    insight_cols[2].metric("source 순도", f"{source_purity:.0f}%")
+if {"domain", "label"}.issubset(df.columns):
+    domain_purity = df.groupby("domain")["label"].nunique().eq(1).mean() * 100
+    insight_cols[3].metric("domain 순도", f"{domain_purity:.0f}%")
+render_leakage_warning()
 
 st.markdown("---")
 

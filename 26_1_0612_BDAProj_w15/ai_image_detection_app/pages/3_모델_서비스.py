@@ -23,6 +23,7 @@ from src.model_eval import (
     sample_evaluation_df,
 )
 from src.report_sync import find_project_report_path, sync_eval_to_report
+from src.ui_components import render_project_notice
 
 
 MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-Model"
@@ -124,6 +125,12 @@ def render_prediction_results(results: list):
     with st.expander("원본 모델 출력 확인"):
         st.json(results)
 
+    with st.expander("발표/보고서용 캡처 포인트", expanded=False):
+        st.write("- 입력 이미지와 품질 경고")
+        st.write("- 최종 판정, 예측 확률, 신뢰도")
+        st.write("- 후보별 확률 그래프")
+        st.write("- Ollama 해설을 사용하는 경우 해설 문장")
+
     st.subheader("LLM 결과 해설")
     use_ollama = st.checkbox("Ollama 해설 사용", value=False)
     if use_ollama:
@@ -135,16 +142,18 @@ def render_prediction_results(results: list):
             default_model = "llama3.2"
             model_options = status["models"] or [default_model]
             model_name = st.selectbox("Ollama 모델", model_options, index=0)
-            if st.button("해설 생성"):
-                prompt = build_explanation_prompt(
+            with st.expander("Ollama 프롬프트 미리보기", expanded=False):
+                preview_prompt = build_explanation_prompt(
                     pred_label=predicted_label,
                     score=score,
                     confidence=level,
                     quality_warnings=st.session_state.get("last_quality_warnings", []),
                     candidate_results=results_df.to_dict("records"),
                 )
+                st.code(preview_prompt, language="text")
+            if st.button("해설 생성"):
                 with st.spinner("Ollama가 해설을 생성하는 중입니다."):
-                    explanation = generate_ollama_explanation(prompt, model_name=model_name)
+                    explanation = generate_ollama_explanation(preview_prompt, model_name=model_name)
                 if explanation["ok"]:
                     st.info(explanation["text"])
                 else:
@@ -274,6 +283,11 @@ def render_eval_tab():
     sample_size = opt1.slider("평가 샘플 수", 10, 200, 30, step=10)
     balance_by_label = opt2.checkbox("FAKE/REAL 균형 샘플링", value=True)
     random_state = opt3.number_input("랜덤 시드", min_value=0, value=42, step=1)
+    if "dataset_split" in df.columns:
+        split_options = ["전체"] + sorted(df["dataset_split"].dropna().astype(str).unique().tolist())
+        selected_split = st.selectbox("평가에 사용할 dataset_split", split_options)
+        if selected_split != "전체":
+            df = df[df["dataset_split"].astype(str) == selected_split].copy()
     max_workers = st.slider("이미지 다운로드 워커 수", 1, 16, 4)
 
     with st.expander("평가 방식 안내", expanded=False):
@@ -370,6 +384,16 @@ def render_eval_tab():
     else:
         st.success("성공 평가 샘플 중 오분류 사례가 없습니다.")
 
+    if len(wrong_df):
+        with st.expander("오분류 이미지 미리보기", expanded=False):
+            preview_rows = wrong_df.head(6).reset_index(drop=True)
+            preview_cols = st.columns(3)
+            for idx, row in preview_rows.iterrows():
+                with preview_cols[idx % 3]:
+                    if pd.notna(row.get("image_path")):
+                        st.image(str(row.get("image_path")), use_container_width=True)
+                    st.caption(f"실제: {row.get('true_label')} / 예측: {row.get('pred_label')} / 확률: {float(row.get('score', 0)) * 100:.1f}%")
+
     with st.expander("전체 평가 결과 보기", expanded=False):
         st.dataframe(eval_df, use_container_width=True)
 
@@ -416,6 +440,7 @@ def render_eval_tab():
 
 st.title("🕵️ 모델 · 서비스 (AI 활용 이미지 판별)")
 st.caption("이미지 제작 과정에 AI가 활용되었을 가능성을 판별하고, 일부 샘플 기준 성능을 점검합니다.")
+render_project_notice()
 
 st.info(
     "이 서비스는 영상 기반 탐지기가 아니라, 현재 데이터 특성에 맞춘 이미지 기반 "

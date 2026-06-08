@@ -23,6 +23,12 @@ pg = st.navigation({
 st.sidebar.markdown("### 🕵️ AI 활용 이미지 판별")
 st.sidebar.caption("이미지 제작 과정에 AI가 활용되었을 가능성을 분류")
 st.sidebar.info("이 프로젝트는 영상 기반 탐지가 아니라 이미지 기반 AI 활용 가능성 판별에 가깝습니다.")
+st.sidebar.markdown("#### 페이지 구성")
+st.sidebar.write("1. EDA — 데이터·결측·샘플 확인")
+st.sidebar.write("2. 시각화 — 인사이트·누수 진단")
+st.sidebar.write("3. 모델·서비스 — 판별·평가·LLM 해설")
+st.sidebar.markdown("#### 제출 체크리스트")
+st.sidebar.success("EDA / 시각화 / 모델 서비스 / 보고서 자동 반영 구성 완료")
 st.sidebar.markdown("---")
 st.sidebar.caption("이름 / 학번")   # TODO: 본인 정보로 변경
 

@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 from src.features import batch_extract_features, save_features, url_domain
 from src.image_quality import filter_valid_images
+from src.ui_components import render_leakage_warning, render_project_notice, render_report_tip
 from src.data_loader import (
     load_data,
     data_missing_message,
@@ -35,6 +36,7 @@ except Exception:
 import numpy as np
 
 st.title("📊 이미지 EDA — AI 활용 이미지 판별")
+render_project_notice()
 
 # thumbnail 기본 크기 (페이지 전체에서 재사용)
 THUMB_W = 320
@@ -97,10 +99,30 @@ st.info(
     "이미지 기반 MVP입니다. 현재 데이터에서 REAL은 주로 Unsplash 실사 사진, FAKE는 Dicebear·Multiavatar 등 "
     "생성/아바타 API 계열 이미지로 구성되어 있어 출처·메타 컬럼은 모델 입력에서 제외합니다."
 )
-st.warning(
-    "`category`, `source`, `fake_method`, `detection_difficulty`, `domain`은 라벨과 직접 연결되는 누수 가능 컬럼입니다. "
-    "이 컬럼들은 EDA와 보고서 분석용으로만 사용하고, 모델 입력에는 사용하지 않습니다."
+render_leakage_warning()
+render_report_tip(
+    "본 데이터는 URL 기반 얼굴 이미지 데이터로, REAL은 주로 실사 사진 출처이고 FAKE는 생성/아바타 API 출처입니다. "
+    "따라서 모델에는 메타데이터가 아니라 이미지 픽셀 자체를 입력으로 사용하도록 설계했습니다."
 )
+
+with st.expander("메타데이터 검증 요약", expanded=False):
+    required_cols = ["image_id", "image_url", "label", "resolution", "dataset_split"]
+    meta_rows = []
+    for col in required_cols:
+        meta_rows.append({
+            "컬럼": col,
+            "존재 여부": col in df.columns,
+            "결측 수": int(df[col].isna().sum()) if col in df.columns else None,
+        })
+    st.dataframe(pd.DataFrame(meta_rows), use_container_width=True)
+    if "image_url" in df.columns:
+        st.metric("중복 image_url 수", int(df["image_url"].duplicated().sum()))
+    if "label" in df.columns:
+        unexpected = sorted(set(df["label"].dropna().astype(str).str.upper()) - {"FAKE", "REAL"})
+        if unexpected:
+            st.warning(f"예상 외 label 값: {unexpected}")
+        else:
+            st.success("label 값은 FAKE/REAL로 정리되어 있습니다.")
 
 # ------------------------ 상단 KPI 카드 --------------------------------
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
@@ -288,6 +310,12 @@ with grid_col:
                     try:
                         st.image(str(img_path), width=thumb_display_w)
                         st.caption(caption)
+                        meta_bits = []
+                        for meta_col in ["image_quality", "resolution", "domain"]:
+                            if meta_col in row.index and pd.notna(row.get(meta_col)):
+                                meta_bits.append(f"{meta_col}: {row.get(meta_col)}")
+                        if meta_bits:
+                            st.caption(" / ".join(meta_bits))
                     except Exception:
                         st.write("[이미지 표시 실패]")
                         st.caption(caption)
