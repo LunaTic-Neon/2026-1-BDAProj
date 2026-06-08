@@ -1,4 +1,4 @@
-# pages/1_EDA.py — 이미지 EDA (CSV+URL 데이터용)
+﻿# pages/1_EDA.py — 이미지 EDA (CSV+URL 데이터용)
 # 완전 구현: UI(사이드바, KPI, 탭), 샘플 이미지 그리드, 결측/캐시 리포트, 캐시 관리
 import sys
 import os
@@ -13,7 +13,7 @@ import base64
 import os
 import time
 from datetime import datetime
-from src.features import batch_extract_features, save_features
+from src.features import batch_extract_features, save_features, url_domain
 from src.data_loader import (
     load_data,
     data_missing_message,
@@ -33,7 +33,7 @@ except Exception:
 
 import numpy as np
 
-st.title("📊 이미지 EDA — AI 합성 이미지 판별")
+st.title("📊 이미지 EDA — AI 활용 이미지 판별")
 
 # thumbnail 기본 크기 (페이지 전체에서 재사용)
 THUMB_W = 320
@@ -45,7 +45,6 @@ rows_opt = st.sidebar.selectbox("로드할 메타 데이터 행 수", options=[N
 sample_mode = st.sidebar.radio("샘플 방식", ("클래스별(기본)", "전체에서 랜덤"))
 sample_per_class = st.sidebar.slider("클래스당/전체 샘플 수", 1, 24, 6)
 grid_cols = st.sidebar.slider("이미지 그리드 열수", 1, 6, 4)
-label_choices = st.sidebar.multiselect("표시할 클래스", options=["ALL"], default=["ALL"])  # will populate after load
 
 st.sidebar.markdown("---")
 st.sidebar.header("캐시 관리")
@@ -81,14 +80,6 @@ except Exception as e:
 
 # populate label choices now that df loaded
 labels = sorted(df["label"].dropna().unique()) if "label" in df.columns else []
-if label_choices == ["ALL"]:
-    label_choices = ["ALL"]
-else:
-    # if user previously selected none, default to ALL
-    if not label_choices:
-        label_choices = ["ALL"]
-
-# 재할당: 사이드바 멀티 선택 UI를 다시 그리도록 (streamlit limitation workaround)
 label_choices = st.sidebar.multiselect("표시할 클래스", options=["ALL"] + labels, default=["ALL"]) if labels else ["ALL"]
 
 # 필터 적용
@@ -96,6 +87,19 @@ if "ALL" not in label_choices and labels:
     df_view = df[df["label"].isin(label_choices)].copy()
 else:
     df_view = df.copy()
+
+if "image_url" in df_view.columns:
+    df_view = df_view.assign(domain=url_domain(df_view))
+
+st.info(
+    "이 프로젝트는 영상 기반 탐지가 아니라, 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 "
+    "이미지 기반 MVP입니다. 현재 데이터에서 REAL은 주로 Unsplash 실사 사진, FAKE는 Dicebear·Multiavatar 등 "
+    "생성/아바타 API 계열 이미지로 구성되어 있어 출처·메타 컬럼은 모델 입력에서 제외합니다."
+)
+st.warning(
+    "`category`, `source`, `fake_method`, `detection_difficulty`, `domain`은 라벨과 직접 연결되는 누수 가능 컬럼입니다. "
+    "이 컬럼들은 EDA와 보고서 분석용으로만 사용하고, 모델 입력에는 사용하지 않습니다."
+)
 
 # ------------------------ 상단 KPI 카드 --------------------------------
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
@@ -172,6 +176,12 @@ with col_dist_right:
         st.plotly_chart(fig_dd, use_container_width=True)
     else:
         st.info("detection_difficulty 컬럼이 없습니다.")
+
+if {"dataset_split", "label"}.issubset(df_view.columns):
+    split_df = df_view.groupby(["dataset_split", "label"]).size().reset_index(name="count")
+    fig_split = px.bar(split_df, x="dataset_split", y="count", color="label", barmode="group", title="Dataset split × label 분포")
+    st.plotly_chart(fig_split, use_container_width=True)
+    st.caption("해석: train/val/test 분할이 존재하므로, 샘플 평가 결과를 보고서에 쓸 때 어떤 분할을 사용했는지 명시하는 것이 좋습니다.")
 
 # ------------------------ 결측 / 누수 리포트 -------------------------------
 st.header("2. 결측치 및 데이터 누수")
@@ -270,7 +280,9 @@ with grid_col:
                 if "label" in row.index:
                     caption += f" | {row['label']}"
                 # URL 관련 텍스트는 캡션에서 제거하여 레이아웃 안정화
-                img_path = row.get("thumb_path")
+                img_path = row.get("thumb_path") if pd.notna(row.get("thumb_path")) else None
+                if not img_path:
+                    img_path = row.get("image_path") if pd.notna(row.get("image_path")) else None
                 if img_path:
                     try:
                         st.image(str(img_path), width=thumb_display_w)
@@ -400,3 +412,4 @@ else:
     st.info("유의미한 수치형 특성이 없습니다. 위의 '선택 샘플 특징 추출 시작' 버튼으로 먼저 특성을 추출하세요.")
 
 # EOF
+

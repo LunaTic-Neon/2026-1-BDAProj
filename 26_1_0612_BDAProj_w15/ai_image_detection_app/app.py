@@ -4,7 +4,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="AI 합성 이미지 판별",
+    page_title="AI 활용 이미지 판별",
     page_icon="🕵️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -16,13 +16,13 @@ viz = st.Page("pages/2_시각화.py", title="시각화", icon="📈")
 service = st.Page("pages/3_모델_서비스.py", title="모델·서비스", icon="🕵️")
 
 pg = st.navigation({
-    "AI 합성 이미지 판별 프로젝트": [eda, viz, service],
+    "AI 활용 이미지 판별 프로젝트": [eda, viz, service],
 })
 
 # 사이드바 공통 영역
-st.sidebar.markdown("### 🕵️ AI 합성 이미지 판별")
-st.sidebar.caption("얼굴 이미지가 실사 사진인지 생성/아바타 계열 이미지인지 분류")
-st.sidebar.info("이 프로젝트는 영상 딥페이크 탐지보다 이미지 기반 실사/생성 이미지 구분에 가깝습니다.")
+st.sidebar.markdown("### 🕵️ AI 활용 이미지 판별")
+st.sidebar.caption("이미지 제작 과정에 AI가 활용되었을 가능성을 분류")
+st.sidebar.info("이 프로젝트는 영상 기반 탐지가 아니라 이미지 기반 AI 활용 가능성 판별에 가깝습니다.")
 st.sidebar.markdown("---")
 st.sidebar.caption("이름 / 학번")   # TODO: 본인 정보로 변경
 

@@ -1,15 +1,15 @@
-# AI 합성 이미지 판별 앱
+# AI 활용 이미지 판별 앱
 
-얼굴 이미지가 AI 합성/아바타 계열 이미지(FAKE)인지 실제 사진(REAL)인지 판별하는 Streamlit 웹 앱입니다.
+이미지 제작 과정에 AI가 활용되었을 가능성이 있는 생성/합성·아바타 계열 이미지(FAKE)인지 실제 사진(REAL)인지 판별하는 Streamlit 웹 앱입니다.
 `project_template`을 복사해 시작했으며, 이미지 데이터(CSV+URL)에 맞게 `data_loader.py`·`1_EDA.py`를 교체했습니다.
 문제정의는 [`../문제정의.md`](../문제정의.md) 참고.
 
-> 이 프로젝트는 영상 기반 딥페이크 탐지가 아니라, URL 기반 얼굴 이미지의 실사/생성 이미지 구분 문제에 가깝습니다.
+> 이 프로젝트는 영상 기반 탐지가 아니라, URL 기반 얼굴 이미지의 AI 활용 가능성 판별 문제에 가깝습니다.
 
 ## 실행
 
 ```bash
-cd deepfake_app
+cd ai_image_detection_app
 pip install -r requirements.txt
 streamlit run app.py
 ```
@@ -17,7 +17,7 @@ streamlit run app.py
 ## 구조
 
 ```
-deepfake_app/
+ai_image_detection_app/
 ├── app.py                 # 진입점 (st.navigation)
 ├── pages/
 │   ├── 1_EDA.py          # 데이터 요약·결측·분포 (1차 작업)

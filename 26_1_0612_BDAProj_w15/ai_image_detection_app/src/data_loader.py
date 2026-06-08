@@ -29,7 +29,7 @@ def data_missing_message() -> str:
     return (
         "데이터 파일을 찾을 수 없습니다.\n\n"
         f"- 필요한 위치: {app_dir / rel_path}\n"
-        "- 해결 방법: Kaggle 원본 CSV 또는 로컬 CSV를 deepfake_app/data/FINAL_DATASET.csv 경로에 넣어 주세요.\n"
+        "- 해결 방법: Kaggle 원본 CSV 또는 로컬 CSV를 ai_image_detection_app/data/FINAL_DATASET.csv 경로에 넣어 주세요.\n"
         "- 데이터 파일은 용량 문제로 git에서 제외될 수 있으므로 제출/실행 PC에서 별도로 배치해야 합니다."
     )
 

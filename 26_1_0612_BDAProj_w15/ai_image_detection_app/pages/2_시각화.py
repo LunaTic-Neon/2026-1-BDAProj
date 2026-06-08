@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -8,10 +8,10 @@ import plotly.express as px
 import streamlit as st
 
 from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
-from src.features import url_domain
+from src.features import add_resolution_features, url_domain
 
 
-st.title("📈 시각화 — 인사이트 대시보드")
+st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
 st.caption("데이터 분포, 출처 편향, 누수 가능 컬럼을 확인하여 모델 입력에 쓰면 안 되는 정보를 구분합니다.")
 
 
@@ -35,13 +35,14 @@ if "image_url" in df.columns:
     df = df.assign(domain=url_domain(df))
 else:
     df = df.assign(domain="UNKNOWN")
+df = add_resolution_features(df)
 
 if "label" in df.columns:
     df["label"] = df["label"].astype(str).str.upper()
 
 st.info(
-    "핵심 해석: 이 데이터는 영상 기반 딥페이크 탐지보다 URL 기반 얼굴 이미지의 "
-    "실사(REAL)와 생성/아바타 계열(FAKE) 구분 문제에 가깝습니다."
+    "핵심 해석: 이 데이터는 영상 기반 탐지보다 URL 기반 얼굴 이미지의 "
+    "AI 활용 가능성, 즉 실사(REAL)와 생성/아바타 계열(FAKE) 구분 문제에 가깝습니다."
 )
 
 total_rows = len(df)
@@ -144,7 +145,41 @@ else:
 
 st.markdown("---")
 
-st.header("5. URL 도메인/출처 편향 분석")
+st.header("5. 데이터셋 분할과 라벨 균형")
+if {"dataset_split", "label"}.issubset(df.columns):
+    split_df = df.groupby(["dataset_split", "label"]).size().reset_index(name="count")
+    fig = px.bar(split_df, x="dataset_split", y="count", color="label", barmode="group", title="dataset_split × label 분포")
+    st.plotly_chart(fig, use_container_width=True)
+    split_ratio = pd.crosstab(df["dataset_split"], df["label"], normalize="index").fillna(0) * 100
+    st.dataframe(split_ratio.round(1), use_container_width=True)
+    st.caption("해석: train/val/test 분할별 라벨 분포가 크게 다르면 평가 결과가 왜곡될 수 있으므로 분할별 균형을 확인해야 합니다.")
+else:
+    st.info("dataset_split 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
+
+st.markdown("---")
+
+st.header("6. 해상도와 라벨 관계")
+if {"resolution", "label"}.issubset(df.columns):
+    res_counts = df["resolution"].fillna("UNKNOWN").value_counts().head(15).rename_axis("resolution").reset_index(name="count")
+    fig = px.bar(res_counts, x="resolution", y="count", text="count", title="resolution 상위 분포")
+    fig.update_traces(textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
+
+    if {"meta_total_pixels", "meta_aspect_ratio"}.issubset(df.columns):
+        left, right = st.columns(2)
+        with left:
+            fig = px.box(df, x="label", y="meta_total_pixels", color="label", title="label별 메타 해상도 픽셀 수")
+            st.plotly_chart(fig, use_container_width=True)
+        with right:
+            fig = px.box(df, x="label", y="meta_aspect_ratio", color="label", title="label별 메타 종횡비")
+            st.plotly_chart(fig, use_container_width=True)
+    st.caption("해석: 해상도나 종횡비가 라벨별로 다르면 모델이 AI 활용 흔적보다 이미지 크기/형식 차이에 영향을 받을 수 있습니다.")
+else:
+    st.info("resolution 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
+
+st.markdown("---")
+
+st.header("7. URL 도메인/출처 편향 분석")
 if {"domain", "label"}.issubset(df.columns):
     top_n = st.slider("표시할 상위 도메인 수", 5, 30, 12)
     top_domains = df["domain"].fillna("UNKNOWN").value_counts().head(top_n).index.tolist()
@@ -162,7 +197,25 @@ else:
 
 st.markdown("---")
 
-st.header("6. 누수 가능 컬럼 진단")
+st.header("8. 모델 입력 제외 컬럼 요약")
+exclude_summary = pd.DataFrame(
+    [
+        {"컬럼": "label_numeric", "사용 범위": "모델 입력 금지", "제외 이유": "정답 라벨을 숫자로 바꾼 컬럼입니다."},
+        {"컬럼": "category", "사용 범위": "EDA 전용", "제외 이유": "AI Generated는 FAKE, Authentic은 REAL과 직접 연결됩니다."},
+        {"컬럼": "source", "사용 범위": "EDA 전용", "제외 이유": "MultiSource는 FAKE, Unsplash는 REAL과 직접 연결됩니다."},
+        {"컬럼": "fake_method", "사용 범위": "EDA 전용", "제외 이유": "FAKE에만 값이 존재하고 REAL은 결측입니다."},
+        {"컬럼": "detection_difficulty", "사용 범위": "EDA 전용", "제외 이유": "Easy는 REAL, Medium/Hard는 FAKE와 강하게 연결됩니다."},
+        {"컬럼": "domain", "사용 범위": "보고서 분석용", "제외 이유": "이미지 URL 출처가 라벨과 직접 연결됩니다."},
+        {"컬럼": "image_url", "사용 범위": "다운로드용", "제외 이유": "URL 문자열 자체는 이미지 픽셀 기반 판별 정보가 아닙니다."},
+        {"컬럼": "image_id", "사용 범위": "식별자", "제외 이유": "샘플 식별자이며 일반화 가능한 이미지 특성이 아닙니다."},
+    ]
+)
+st.dataframe(exclude_summary, use_container_width=True)
+st.error("위 컬럼을 모델 입력에 넣으면 성능이 높아 보여도 실제 이미지 판별 능력이 아니라 정답 힌트를 이용한 결과일 수 있습니다.")
+
+st.markdown("---")
+
+st.header("9. 누수 가능 컬럼 진단")
 st.write("아래 컬럼은 label과 거의 직접 연결될 수 있으므로, 모델 학습/예측 입력에서는 제외하는 것이 원칙입니다.")
 available_leakage_cols = [col for col in LEAKAGE_COLS if col in df.columns]
 if available_leakage_cols and "label" in df.columns:
@@ -176,13 +229,16 @@ if available_leakage_cols and "label" in df.columns:
     with right:
         st.subheader("행 기준 비율(%)")
         st.dataframe(ratio.round(1), use_container_width=True)
-    st.error("모델에 이 컬럼을 넣으면 성능이 좋아 보일 수 있지만, 실제 이미지 판별 능력이 아니라 정답 힌트를 외운 결과일 수 있습니다.")
+    st.error(
+        "실제 점검 결과 category/source/detection_difficulty/fake_method는 라벨과 거의 직접 연결됩니다. "
+        "모델에 이 컬럼을 넣으면 AI 활용 이미지 판별 능력이 아니라 정답 힌트를 외운 결과일 수 있습니다."
+    )
 else:
     st.info("진단 가능한 누수 컬럼 또는 label 컬럼이 없습니다.")
 
 st.markdown("---")
 
-st.header("7. 추가 탐색 그래프")
+st.header("10. 추가 탐색 그래프")
 exclude_vis_cols = {
     "image_id",
     "image_url",

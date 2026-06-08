@@ -33,6 +33,19 @@ def url_domain(df: pd.DataFrame) -> pd.Series:
     return df["image_url"].str.extract(r"https?://([^/]+)")[0]
 
 
+def add_resolution_features(df: pd.DataFrame, resolution_col: str = "resolution") -> pd.DataFrame:
+    df_out = df.copy()
+    if resolution_col not in df_out.columns:
+        return df_out
+
+    parsed = df_out[resolution_col].astype(str).str.lower().str.extract(r"(?P<meta_width>\d+)\s*x\s*(?P<meta_height>\d+)")
+    df_out["meta_width"] = pd.to_numeric(parsed["meta_width"], errors="coerce")
+    df_out["meta_height"] = pd.to_numeric(parsed["meta_height"], errors="coerce")
+    df_out["meta_total_pixels"] = df_out["meta_width"] * df_out["meta_height"]
+    df_out["meta_aspect_ratio"] = df_out["meta_width"] / df_out["meta_height"]
+    return df_out
+
+
 def _open_image(input: Union[str, Path, Image.Image]) -> Optional[Image.Image]:
     try:
         if isinstance(input, Image.Image):
