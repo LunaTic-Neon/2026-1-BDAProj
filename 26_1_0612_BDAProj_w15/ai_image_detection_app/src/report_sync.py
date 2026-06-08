@@ -17,6 +17,8 @@ def ensure_report_markers(report_path: Path) -> None:
     text = report_path.read_text(encoding="utf-8")
     feature_marker = "<!-- AUTO:FEATURE_RESULTS_START -->"
     eval_marker = "<!-- AUTO:EVAL_RESULTS_START -->"
+    model_marker = "<!-- AUTO:MODEL_COMPARISON_START -->"
+    llm_marker = "<!-- AUTO:LLM_EXPLANATION_START -->"
 
     if feature_marker not in text:
         target = "## 4. 모델 / 서비스"
@@ -33,6 +35,24 @@ def ensure_report_markers(report_path: Path) -> None:
             "\n\n<!-- AUTO:EVAL_RESULTS_START -->\n"
             "평가 결과가 아직 자동 반영되지 않았습니다.\n"
             "<!-- AUTO:EVAL_RESULTS_END -->\n\n"
+        )
+        text = text.replace(target, block + target, 1) if target in text else text + block
+
+    if model_marker not in text:
+        target = "## 5. Streamlit 앱"
+        block = (
+            "\n\n<!-- AUTO:MODEL_COMPARISON_START -->\n"
+            "경량 모델 비교 결과가 아직 자동 반영되지 않았습니다.\n"
+            "<!-- AUTO:MODEL_COMPARISON_END -->\n\n"
+        )
+        text = text.replace(target, block + target, 1) if target in text else text + block
+
+    if llm_marker not in text:
+        target = "## 6. 결론 & 한계"
+        block = (
+            "\n\n<!-- AUTO:LLM_EXPLANATION_START -->\n"
+            "LLM 해설 예시가 아직 자동 반영되지 않았습니다.\n"
+            "<!-- AUTO:LLM_EXPLANATION_END -->\n\n"
         )
         text = text.replace(target, block + target, 1) if target in text else text + block
 
@@ -146,3 +166,51 @@ def sync_features_to_report(feature_csv_path: Path, report_path: Optional[Path] 
     report = report_path or find_project_report_path()
     content = summarize_feature_results(feature_csv_path, feature_summary_path)
     return update_marked_section(report, "FEATURE_RESULTS", content)
+
+
+def summarize_lightweight_model(model_summary_path: Path) -> str:
+    payload = json.loads(model_summary_path.read_text(encoding="utf-8"))
+    per_class = pd.DataFrame(payload.get("per_class", {})).T
+    confusion = pd.DataFrame(
+        payload.get("confusion_matrix", []),
+        index=payload.get("labels", []),
+        columns=payload.get("labels", []),
+    )
+    lines = [
+        "### 경량 모델 학습·비교 자동 요약",
+        "",
+        f"- 모델 유형: `{payload.get('model_type', '-')}`",
+        f"- 입력 특징 파일: `{Path(payload.get('feature_path', '-')).name}`",
+        f"- 사용 특징 수: **{payload.get('feature_count', '-')}**",
+        f"- 학습 행 수: **{payload.get('train_rows', '-')}**",
+        f"- 평가 행 수: **{payload.get('test_rows', '-')}**",
+        f"- 정확도: **{payload.get('accuracy', 0) * 100:.1f}%**",
+        "",
+        "#### 클래스별 성능",
+        "",
+        _markdown_table(per_class.round(3) if not per_class.empty else per_class),
+        "",
+        "#### Confusion Matrix",
+        "",
+        _markdown_table(confusion),
+        "",
+        "> 이 결과는 누수 가능 메타 컬럼을 제외한 특징/임베딩 기반 경량 모델 성능입니다. 데이터 출처 편향과 샘플 수에 따라 해석이 달라질 수 있습니다.",
+    ]
+    return "\n".join(lines)
+
+
+def sync_lightweight_model_to_report(model_summary_path: Path, report_path: Optional[Path] = None) -> Path:
+    report = report_path or find_project_report_path()
+    content = summarize_lightweight_model(model_summary_path)
+    return update_marked_section(report, "MODEL_COMPARISON", content)
+
+
+def sync_llm_explanation_to_report(explanation_text: str, report_path: Optional[Path] = None) -> Path:
+    report = report_path or find_project_report_path()
+    content = (
+        "### Ollama 기반 LLM 해설 예시\n\n"
+        f"> {explanation_text.strip()}\n\n"
+        "이 해설은 모델 예측 결과를 사용자가 이해하기 쉽게 풀어쓴 참고 문장입니다. "
+        "LLM이 직접 이미지를 판별한 것은 아니며, 최종 보고서 제출 전 사람이 해석을 검토해야 합니다."
+    )
+    return update_marked_section(report, "LLM_EXPLANATION", content)

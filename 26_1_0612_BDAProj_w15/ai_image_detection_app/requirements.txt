@@ -9,3 +9,6 @@ numpy
 tqdm
 opencv-python
 pyarrow
+torchvision
+scikit-learn
+joblib

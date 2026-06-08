@@ -53,6 +53,34 @@ def build_explanation_prompt(
 """.strip()
 
 
+def build_eval_explanation_prompt(metrics: dict[str, Any]) -> str:
+    return f"""
+다음은 AI 활용 이미지 판별 모델의 샘플 평가 결과입니다.
+
+정확도: {metrics.get('accuracy', 'N/A')}
+평가 샘플 수: {metrics.get('test_rows', metrics.get('success', 'N/A'))}
+모델 유형: {metrics.get('model_type', 'unknown')}
+클래스별 성능: {metrics.get('per_class', {})}
+혼동행렬: {metrics.get('confusion_matrix', [])}
+
+이 결과가 어떤 의미인지 한국어로 3~5문장으로 설명해 주세요.
+성능이 높더라도 데이터 출처 편향과 범용 AI 이미지 탐지로 일반화하기 어렵다는 한계를 포함해 주세요.
+성능이 낮다면 사전학습 모델/특징 기반 모델의 도메인 한계와 개선 방향을 함께 설명해 주세요.
+""".strip()
+
+
+def build_feature_explanation_prompt(feature_summary: dict[str, Any]) -> str:
+    return f"""
+다음은 AI 활용 이미지 판별 프로젝트의 전처리·특징추출 요약입니다.
+
+특징 요약:
+{feature_summary}
+
+brightness, sharpness, face_area_ratio, RGB 통계와 같은 특징이 라벨 차이를 어떻게 설명할 수 있는지 한국어로 3~5문장으로 설명해 주세요.
+단, domain/source/fake_method 같은 누수 가능 정보는 모델 입력에 쓰면 안 된다는 점을 포함해 주세요.
+""".strip()
+
+
 def generate_ollama_explanation(
     prompt: str,
     model_name: str = "llama3.2",

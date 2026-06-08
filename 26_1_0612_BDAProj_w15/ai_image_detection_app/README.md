@@ -45,6 +45,7 @@ ai_image_detection_app/
 - 품질 점검: 해상도, 종횡비, 밝기, 선명도 기준으로 입력 이미지 경고를 표시합니다.
 - 샘플 성능 평가: `FINAL_DATASET.csv`의 일부 샘플을 다운로드해 실제 라벨과 모델 예측을 비교합니다.
 - 평가 결과: accuracy, confusion matrix, 클래스별 요약, 오분류 사례, CSV 다운로드를 제공합니다.
+- 경량 모델 학습/비교: 추출 특징 또는 ResNet18/MobileNetV3/EfficientNet-B0 임베딩으로 Logistic Regression/RandomForest를 학습합니다.
 - Ollama 해설: 선택적으로 로컬 LLM을 사용해 모델 예측 결과를 쉬운 문장으로 설명합니다.
 - 보고서 자동 반영: 평가 결과와 특징추출 결과를 `../보고서.md`의 자동 반영 구역에 업데이트할 수 있습니다.
 
@@ -68,6 +69,24 @@ ollama pull llama3.2
 ```
 
 앱의 모델·서비스 페이지에서 `Ollama 해설 사용`을 체크하면 예측 라벨, 확률, 신뢰도, 이미지 품질 경고를 바탕으로 사용자용 해설을 생성합니다.
+
+## 경량 학습 권장 실행법
+
+개인 PC 4GB GPU 또는 CPU 환경에서는 작은 샘플과 작은 batch size를 사용하세요.
+
+```bash
+python -m src.image_embeddings --limit 100 --model resnet18 --batch-size 4 --out data/embeddings_resnet18_100.parquet
+python -m src.train_lightweight_model --features data/embeddings_resnet18_100.parquet --out models/lightweight_model.joblib
+```
+
+학교 PC 8GB GPU에서는 더 큰 샘플과 `efficientnet_b0`도 시도할 수 있습니다.
+
+```bash
+python -m src.image_embeddings --limit 1000 --model efficientnet_b0 --batch-size 8 --out data/embeddings_efficientnet_b0_1000.parquet
+python -m src.train_lightweight_model --features data/embeddings_efficientnet_b0_1000.parquet --out models/lightweight_model.joblib
+```
+
+이 방식은 대형 모델 전체를 파인튜닝하지 않고, 사전학습 CNN이 뽑은 이미지 표현 벡터를 가벼운 분류기에 학습시키는 구조입니다.
 
 ## 보고서 자동 반영
 

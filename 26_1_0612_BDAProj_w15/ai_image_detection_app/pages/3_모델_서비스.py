@@ -14,7 +14,7 @@ from transformers import pipeline
 
 from src.data_loader import data_missing_message, fetch_image, load_data
 from src.image_quality import avg_brightness, sharpness_score
-from src.llm_explainer import build_explanation_prompt, check_ollama_status, generate_ollama_explanation
+from src.llm_explainer import build_eval_explanation_prompt, build_explanation_prompt, check_ollama_status, generate_ollama_explanation
 from src.model_eval import (
     compute_eval_metrics,
     evaluate_image_sample,
@@ -23,7 +23,9 @@ from src.model_eval import (
     sample_evaluation_df,
 )
 from src.report_sync import find_project_report_path, sync_eval_to_report
+from src.report_sync import sync_lightweight_model_to_report, sync_llm_explanation_to_report
 from src.ui_components import render_project_notice
+from src.image_embeddings import gpu_summary
 
 
 MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-Model"
@@ -438,6 +440,137 @@ def render_eval_tab():
                     st.exception(e)
 
 
+def render_lightweight_training_tab():
+    st.subheader("경량 모델 학습/비교")
+    st.caption("4GB/8GB GPU 환경을 고려해 이미지 임베딩 또는 추출 특징으로 가벼운 분류기를 학습합니다.")
+    gpu = gpu_summary()
+    device_cols = st.columns(4)
+    device_cols[0].metric("실행 장치", gpu["device"])
+    device_cols[1].metric("GPU 이름", gpu["name"])
+    device_cols[2].metric("VRAM", "-" if gpu["vram_gb"] is None else f"{gpu['vram_gb']}GB")
+    device_cols[3].metric("권장 batch", "4~8" if (gpu["vram_gb"] or 0) <= 4 else "8~16")
+
+    st.info(
+        "권장 흐름: 먼저 특징추출 또는 임베딩 파일을 만든 뒤 Logistic Regression으로 학습합니다. "
+        "4GB GPU에서는 resnet18/mobilenet_v3_small + batch size 4를 추천합니다."
+    )
+
+    mode = st.radio("학습 입력 선택", ["기존 features/embeddings 파일 사용", "임베딩 추출 명령 안내"], horizontal=True)
+    if mode == "임베딩 추출 명령 안내":
+        emb_model = st.selectbox("임베딩 모델", ["resnet18", "mobilenet_v3_small", "efficientnet_b0"])
+        limit = st.number_input("샘플 수", min_value=20, max_value=2000, value=100, step=20)
+        batch_size = st.number_input("batch size", min_value=1, max_value=32, value=4, step=1)
+        out_name = f"data/embeddings_{emb_model}_{int(limit)}.parquet"
+        st.code(
+            f"python -m src.image_embeddings --limit {int(limit)} --model {emb_model} --batch-size {int(batch_size)} --out {out_name}",
+            language="bash",
+        )
+        st.caption("명령을 터미널에서 실행한 뒤, 아래 파일 학습 모드에서 생성된 parquet/csv 파일을 선택해 주세요.")
+
+    data_dir = APP_DIR / "data"
+    feature_files = sorted(
+        list(data_dir.glob("features_*.csv")) + list(data_dir.glob("embeddings_*.parquet")) + list(data_dir.glob("embeddings_*.csv")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not feature_files:
+        st.warning("학습에 사용할 features_*.csv 또는 embeddings_*.parquet 파일이 없습니다.")
+        st.code("python -m src.feature_pipeline --out data/features_sample_50.csv --chunk 10 --workers 4 --limit 50 --quality-check", language="bash")
+        return
+
+    selected_feature_file = st.selectbox("학습 파일 선택", feature_files, format_func=lambda p: p.name)
+    model_type = st.selectbox("경량 분류기", ["logistic_regression", "random_forest"])
+    if st.button("경량 모델 학습 시작", type="primary"):
+        try:
+            from src.train_lightweight_model import train_lightweight_model
+
+            model_path = APP_DIR / "models" / "lightweight_model.joblib"
+            with st.spinner("경량 모델을 학습하고 평가하는 중입니다."):
+                metrics, saved_model_path = train_lightweight_model(
+                    selected_feature_file,
+                    out_path=model_path,
+                    model_type=model_type,
+                )
+            st.success(f"학습 완료: {saved_model_path}")
+            st.session_state["last_lightweight_metrics"] = metrics
+        except Exception as e:
+            st.error("경량 모델 학습 중 오류가 발생했습니다.")
+            st.exception(e)
+
+    metrics = st.session_state.get("last_lightweight_metrics")
+    summary_path = APP_DIR / "reports" / "lightweight_eval_summary.json"
+    if metrics or summary_path.exists():
+        if metrics is None:
+            metrics = json.loads(summary_path.read_text(encoding="utf-8"))
+        st.subheader("경량 모델 평가 결과")
+        cols = st.columns(4)
+        cols[0].metric("모델", metrics.get("model_type", "-"))
+        cols[1].metric("학습 행", f"{metrics.get('train_rows', 0):,}")
+        cols[2].metric("평가 행", f"{metrics.get('test_rows', 0):,}")
+        cols[3].metric("정확도", f"{metrics.get('accuracy', 0) * 100:.1f}%")
+        per_class = pd.DataFrame(metrics.get("per_class", {})).T
+        if not per_class.empty:
+            st.dataframe(per_class, use_container_width=True)
+        cm = pd.DataFrame(metrics.get("confusion_matrix", []), index=metrics.get("labels", []), columns=metrics.get("labels", []))
+        if not cm.empty:
+            fig = px.imshow(cm, text_auto=True, aspect="auto", title="경량 모델 Confusion Matrix")
+            st.plotly_chart(fig, use_container_width=True)
+        with st.expander("경량 모델 결과 Ollama 해설", expanded=False):
+            status = check_ollama_status()
+            if not status["available"]:
+                st.info("Ollama가 꺼져 있으면 해설 생성은 건너뛰고, 성능 지표만 확인하면 됩니다.")
+                st.code("ollama serve\nollama pull llama3.2", language="bash")
+            else:
+                model_name = st.selectbox("해설용 Ollama 모델", status["models"] or ["llama3.2"], key="lightweight_ollama_model")
+                eval_prompt = build_eval_explanation_prompt(metrics)
+                st.code(eval_prompt, language="text")
+                if st.button("경량 모델 결과 해설 생성"):
+                    result = generate_ollama_explanation(eval_prompt, model_name=model_name)
+                    if result["ok"]:
+                        st.info(result["text"])
+                        st.session_state["last_llm_eval_explanation"] = result["text"]
+                    else:
+                        st.error(result["error"])
+        if st.button("경량 모델 결과를 보고서에 반영"):
+            try:
+                report_path = sync_lightweight_model_to_report(summary_path, find_project_report_path(APP_DIR))
+                st.success(f"보고서 반영 완료: {report_path}")
+            except Exception as e:
+                st.error("보고서 반영 중 오류가 발생했습니다.")
+                st.exception(e)
+
+
+def render_ollama_diagnostics_tab():
+    st.subheader("Ollama 진단")
+    st.caption("Ollama는 이미지 판별자가 아니라 모델 결과를 설명하는 텍스트 해설자입니다.")
+    status = check_ollama_status()
+    if not status["available"]:
+        st.warning("Ollama 서버에 연결할 수 없습니다.")
+        st.code("ollama serve\nollama pull llama3.2", language="bash")
+        st.caption(status.get("error"))
+        return
+
+    st.success("Ollama 서버에 연결되었습니다.")
+    st.write("설치된 모델:", status["models"])
+    model_name = st.selectbox("테스트 모델", status["models"] or ["llama3.2"])
+    prompt = st.text_area("테스트 프롬프트", "AI 활용 이미지 판별 결과를 사용자에게 설명하는 예시 문장을 2문장으로 작성해 주세요.")
+    if st.button("Ollama 테스트 실행"):
+        result = generate_ollama_explanation(prompt, model_name=model_name)
+        if result["ok"]:
+            st.info(result["text"])
+            st.session_state["last_ollama_test_text"] = result["text"]
+            reports_dir = APP_DIR / "reports"
+            reports_dir.mkdir(exist_ok=True)
+            explanation_path = reports_dir / "llm_explanation_single.txt"
+            explanation_path.write_text(result["text"], encoding="utf-8")
+        else:
+            st.error(result["error"])
+    if st.session_state.get("last_ollama_test_text"):
+        if st.button("LLM 해설 예시를 보고서에 반영"):
+            report_path = sync_llm_explanation_to_report(st.session_state["last_ollama_test_text"], find_project_report_path(APP_DIR))
+            st.success(f"보고서 반영 완료: {report_path}")
+
+
 st.title("🕵️ 모델 · 서비스 (AI 활용 이미지 판별)")
 st.caption("이미지 제작 과정에 AI가 활용되었을 가능성을 판별하고, 일부 샘플 기준 성능을 점검합니다.")
 render_project_notice()
@@ -457,12 +590,18 @@ with st.expander("사용 방법", expanded=False):
         """
     )
 
-single_tab, eval_tab = st.tabs(["🖼️ 단일 이미지 판별", "📊 샘플 성능 평가"])
+single_tab, eval_tab, train_tab, ollama_tab = st.tabs(["🖼️ 단일 이미지 판별", "📊 샘플 성능 평가", "🧪 경량 모델 학습/비교", "🤖 Ollama 진단"])
 with single_tab:
     render_single_prediction_tab()
 
 with eval_tab:
     render_eval_tab()
+
+with train_tab:
+    render_lightweight_training_tab()
+
+with ollama_tab:
+    render_ollama_diagnostics_tab()
 
 st.markdown("---")
 st.warning(
