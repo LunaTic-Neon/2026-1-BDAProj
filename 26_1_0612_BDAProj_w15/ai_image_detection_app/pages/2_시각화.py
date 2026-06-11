@@ -11,12 +11,18 @@ import streamlit as st
 from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
 from src.features import add_resolution_features, url_domain
 from src.report_sync import find_project_report_path, sync_features_to_report
-from src.ui_components import render_leakage_warning, render_project_notice
+from src.ui_components import render_leakage_warning, render_project_notice, render_story_insight, render_workflow_card
 
 
 st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
 st.caption("데이터 분포, 출처 편향, 누수 가능 컬럼을 확인하여 모델 입력에 쓰면 안 되는 정보를 구분합니다.")
 render_project_notice()
+render_workflow_card(
+    "이 페이지의 사용 흐름",
+    "FINAL_DATASET.csv와 특징추출 CSV",
+    "라벨·출처·품질·해상도·특징 분포를 비교합니다.",
+    "보고서에 넣을 데이터 스토리와 모델 제외 근거를 얻습니다.",
+)
 
 
 @st.cache_data
@@ -130,6 +136,11 @@ if {"domain", "label"}.issubset(df.columns):
     domain_purity = df.groupby("domain")["label"].nunique().eq(1).mean() * 100
     insight_cols[3].metric("domain 순도", f"{domain_purity:.0f}%")
 render_leakage_warning()
+render_story_insight(
+    "이 데이터는 '조작 흔적'보다 '제작 생태계 차이'가 먼저 보입니다",
+    "REAL은 images.unsplash.com의 1080×1080 실사 사진으로 모여 있고, FAKE는 dicebear·multiavatar·randomuser 같은 생성/아바타 API의 1024×1024 이미지로 모여 있습니다. "
+    "따라서 모델이 좋은 성능을 보이더라도, 그것은 얼굴의 미세한 위조 흔적만이 아니라 실사 사진 서비스의 질감과 아바타 생성 서비스의 스타일 차이를 함께 포착한 결과일 수 있습니다.",
+)
 
 st.markdown("---")
 
@@ -141,8 +152,12 @@ if "label" in df.columns and not label_counts.empty:
     fig.update_traces(textposition="outside")
     fig.update_layout(showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(label_df, use_container_width=True)
-    st.success("해석: FAKE가 REAL보다 많지만 극단적인 불균형은 아니므로, 성능 평가에서는 accuracy와 함께 F1/recall도 확인하는 것이 좋습니다.")
+    with st.expander("라벨 분포 상세 표", expanded=False):
+        st.dataframe(label_df, use_container_width=True)
+    render_story_insight(
+        "FAKE가 더 많은 구조는 서비스의 오경보 기준을 바꿉니다",
+        "FAKE가 REAL보다 많기 때문에 모델이 다수 클래스에 끌릴 가능성이 있습니다. 실제 서비스에서는 단순 정확도보다 REAL 사진을 FAKE로 오해하는 오경보와 FAKE 이미지를 REAL로 놓치는 누락을 나누어 봐야 합니다.",
+    )
 else:
     st.warning("label 컬럼이 없어 라벨 분포를 표시할 수 없습니다.")
 
@@ -165,7 +180,10 @@ if {"image_quality", "label"}.issubset(df.columns):
         title="image_quality별 FAKE/REAL 분포",
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("해석: 특정 품질 등급이 특정 라벨에 몰려 있다면, 모델이 이미지 조작 흔적보다 품질 차이를 학습할 위험이 있습니다.")
+    render_story_insight(
+        "품질은 판정 근거가 아니라 신뢰도 조절 장치입니다",
+        "High와 Medium 품질이 두 라벨 모두에 존재하므로 품질 하나로 AI 활용 여부를 나누기는 어렵습니다. 대신 흐림·저해상도 이미지는 얼굴 질감과 경계 정보를 약하게 만들어 모델 확률을 흔들 수 있어, 서비스에서 품질 경고를 함께 보여주는 근거가 됩니다.",
+    )
 else:
     st.info("image_quality 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
 
@@ -192,7 +210,10 @@ if {"confidence_score", "label"}.issubset(df.columns):
         with tab_box:
             fig = px.box(score_df, x="label", y="confidence_score", color="label", title="label별 confidence_score 비교")
             st.plotly_chart(fig, use_container_width=True)
-        st.caption("해석: confidence_score가 라벨별로 다르게 분포하면 데이터 생성·수집 과정의 편향을 의심할 수 있습니다.")
+        render_story_insight(
+            "REAL의 높은 confidence는 실사 출처의 일관성을 보여줍니다",
+            "REAL의 confidence_score 평균이 FAKE보다 높습니다. 이는 Unsplash 실사 사진이 비교적 일정한 품질과 촬영 구도를 가지는 반면, FAKE는 여러 생성 API가 섞여 스타일과 품질 편차가 더 크기 때문으로 해석할 수 있습니다.",
+        )
     else:
         st.info("confidence_score를 숫자로 변환할 수 있는 행이 없습니다.")
 else:
@@ -209,7 +230,10 @@ if {"fake_method", "label"}.issubset(df.columns):
         fig.update_traces(textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
         st.warning("fake_method는 정답 라벨과 직접 연결될 가능성이 높으므로 모델 입력에는 사용하지 않고 EDA 분석용으로만 사용합니다.")
-        st.caption("해석: 특정 생성 방식에 FAKE 샘플이 몰려 있으면 실제 다양한 합성 이미지에 대한 일반화 성능이 제한될 수 있습니다.")
+        render_story_insight(
+            "FAKE는 하나의 기술이 아니라 여러 생성 서비스의 묶음입니다",
+            "FAKE 내부에는 dicebear, multiavatar, randomuser, pravatar처럼 서로 다른 생성 방식이 섞여 있습니다. 따라서 이 프로젝트의 모델은 하나의 AI 흔적만 찾기보다 여러 생성 서비스의 스타일을 실사 사진과 구분하는 방향으로 동작할 가능성이 큽니다.",
+        )
     else:
         st.info("FAKE 라벨 행이 없어 fake_method 분석을 표시할 수 없습니다.")
 else:
@@ -223,8 +247,12 @@ if {"dataset_split", "label"}.issubset(df.columns):
     fig = px.bar(split_df, x="dataset_split", y="count", color="label", barmode="group", title="dataset_split × label 분포")
     st.plotly_chart(fig, use_container_width=True)
     split_ratio = pd.crosstab(df["dataset_split"], df["label"], normalize="index").fillna(0) * 100
-    st.dataframe(split_ratio.round(1), use_container_width=True)
-    st.caption("해석: train/val/test 분할별 라벨 분포가 크게 다르면 평가 결과가 왜곡될 수 있으므로 분할별 균형을 확인해야 합니다.")
+    with st.expander("dataset_split 비율 상세 표", expanded=False):
+        st.dataframe(split_ratio.round(1), use_container_width=True)
+    render_story_insight(
+        "분할별 비율이 비슷하면 평가 결과의 비교가 쉬워집니다",
+        "train, val, test 모두 FAKE가 조금 더 많은 구조를 유지합니다. 따라서 특정 split만 유난히 다른 데이터가 아니라, 전체 데이터의 출처 구조가 평가셋에도 이어진다고 볼 수 있습니다.",
+    )
 else:
     st.info("dataset_split 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
 
@@ -245,7 +273,10 @@ if {"resolution", "label"}.issubset(df.columns):
         with right:
             fig = px.box(df, x="label", y="meta_aspect_ratio", color="label", title="label별 메타 종횡비")
             st.plotly_chart(fig, use_container_width=True)
-    st.caption("해석: 해상도나 종횡비가 라벨별로 다르면 모델이 AI 활용 흔적보다 이미지 크기/형식 차이에 영향을 받을 수 있습니다.")
+    render_story_insight(
+        "해상도는 데이터 수집 방식의 흔적입니다",
+        "REAL은 1080×1080, FAKE는 1024×1024로 분리되어 있습니다. 이는 실사 사진 플랫폼과 생성 API가 이미지를 제공하는 기본 규격 차이로 볼 수 있으며, 모델이 해상도 자체를 정답 힌트로 쓰지 않도록 주의해야 합니다.",
+    )
 else:
     st.info("resolution 또는 label 컬럼이 없어 해당 분석을 건너뜁니다.")
 
@@ -262,8 +293,12 @@ if {"domain", "label"}.issubset(df.columns):
     st.plotly_chart(fig, use_container_width=True)
 
     ratio_table = pd.crosstab(domain_df["domain"], domain_df["label"], normalize="index").fillna(0) * 100
-    st.dataframe(ratio_table.round(1), use_container_width=True)
-    st.warning("해석: REAL과 FAKE가 서로 다른 도메인에서 주로 수집되었다면, 도메인/source 정보는 모델 입력에서 제외해야 합니다.")
+    with st.expander("도메인별 라벨 비율 상세 표", expanded=False):
+        st.dataframe(ratio_table.round(1), use_container_width=True)
+    render_story_insight(
+        "출처 도메인은 이미지가 만들어진 배경을 보여줍니다",
+        "REAL은 사진 공유 플랫폼, FAKE는 아바타·프로필 생성 API에 모여 있습니다. 이는 모델이 사람 얼굴만 보는 것이 아니라 배경, 색감, 구도, 렌더링 스타일 같은 제작 환경의 차이까지 함께 포착할 수 있음을 의미합니다.",
+    )
 else:
     st.info("domain 또는 label 컬럼이 없어 도메인 편향 분석을 표시할 수 없습니다.")
 
@@ -282,7 +317,8 @@ exclude_summary = pd.DataFrame(
         {"컬럼": "image_id", "사용 범위": "식별자", "제외 이유": "샘플 식별자이며 일반화 가능한 이미지 특성이 아닙니다."},
     ]
 )
-st.dataframe(exclude_summary, use_container_width=True)
+with st.expander("모델 입력 제외 컬럼 상세 표", expanded=False):
+    st.dataframe(exclude_summary, use_container_width=True)
 st.error("위 컬럼을 모델 입력에 넣으면 성능이 높아 보여도 실제 이미지 판별 능력이 아니라 정답 힌트를 이용한 결과일 수 있습니다.")
 
 st.markdown("---")
@@ -297,10 +333,12 @@ if available_leakage_cols and "label" in df.columns:
     left, right = st.columns(2)
     with left:
         st.subheader("개수")
-        st.dataframe(cross, use_container_width=True)
+        with st.expander("교차표 개수 보기", expanded=False):
+            st.dataframe(cross, use_container_width=True)
     with right:
         st.subheader("행 기준 비율(%)")
-        st.dataframe(ratio.round(1), use_container_width=True)
+        with st.expander("교차표 비율 보기", expanded=False):
+            st.dataframe(ratio.round(1), use_container_width=True)
     st.error(
         "실제 점검 결과 category/source/detection_difficulty/fake_method는 라벨과 거의 직접 연결됩니다. "
         "모델에 이 컬럼을 넣으면 AI 활용 이미지 판별 능력이 아니라 정답 힌트를 외운 결과일 수 있습니다."
@@ -325,11 +363,12 @@ exclude_vis_cols = {
 }
 candidate_cols = [col for col in df.columns if col not in exclude_vis_cols]
 if candidate_cols:
-    default_col = "label" if "label" in candidate_cols else candidate_cols[0]
-    selected_col = st.selectbox("분포를 볼 컬럼", candidate_cols, index=candidate_cols.index(default_col))
-    color_col = "label" if "label" in df.columns and selected_col != "label" else None
-    fig = px.histogram(df, x=selected_col, color=color_col, title=f"{selected_col} 분포")
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("추가 탐색용 그래프입니다. 보고서에는 위의 고정 인사이트 그래프를 우선 사용하는 것을 추천합니다.")
+    with st.expander("추가 탐색 그래프", expanded=False):
+        default_col = "label" if "label" in candidate_cols else candidate_cols[0]
+        selected_col = st.selectbox("분포를 볼 컬럼", candidate_cols, index=candidate_cols.index(default_col))
+        color_col = "label" if "label" in df.columns and selected_col != "label" else None
+        fig = px.histogram(df, x=selected_col, color=color_col, title=f"{selected_col} 분포")
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("추가 탐색용 그래프입니다. 보고서에는 위의 고정 인사이트 그래프를 우선 사용하는 것을 추천합니다.")
 else:
     st.info("추가 탐색에 사용할 컬럼이 없습니다.")

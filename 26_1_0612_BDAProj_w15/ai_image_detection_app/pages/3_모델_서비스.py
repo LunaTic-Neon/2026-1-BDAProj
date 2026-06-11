@@ -10,7 +10,6 @@ import streamlit as st
 import torch
 import json
 from PIL import Image
-from transformers import pipeline
 
 from src.data_loader import data_missing_message, fetch_image, load_data
 from src.image_quality import avg_brightness, sharpness_score
@@ -35,6 +34,13 @@ DEMO_DIR = APP_DIR / "data" / "demo_samples"
 
 @st.cache_resource(show_spinner="모델 로드 중입니다. 최초 실행에는 시간이 걸릴 수 있습니다.")
 def load_img_model():
+    try:
+        from transformers import pipeline
+    except Exception as exc:
+        raise RuntimeError(
+            "transformers 또는 huggingface-hub 버전이 맞지 않습니다. "
+            "`python -m pip install -U \"huggingface-hub>=1.5.0,<2.0\" \"transformers>=5.10.2\"`를 실행해 주세요."
+        ) from exc
     device = 0 if torch.cuda.is_available() else -1
     return pipeline("image-classification", model=MODEL_NAME, device=device)
 
@@ -96,10 +102,12 @@ def render_prediction_results(results: list):
     score = float(top["확률"])
     level, level_message = confidence_level(score)
 
-    result_col1, result_col2, result_col3 = st.columns(3)
+    quality_warning_count = len(st.session_state.get("last_quality_warnings", []))
+    result_col1, result_col2, result_col3, result_col4 = st.columns(4)
     result_col1.metric("최종 판정", predicted_label)
     result_col2.metric("예측 확률", f"{score * 100:.1f}%")
     result_col3.metric("신뢰도", level)
+    result_col4.metric("품질 경고", f"{quality_warning_count}개")
 
     if level == "높음":
         st.success(level_message)
@@ -107,6 +115,10 @@ def render_prediction_results(results: list):
         st.warning(level_message)
     else:
         st.error(level_message)
+    if predicted_label == "FAKE":
+        st.warning("모델은 이 이미지가 AI 활용/생성 계열일 가능성이 높다고 보았습니다. 단, 실제 제작 과정을 보장하는 판정은 아닙니다.")
+    elif predicted_label == "REAL":
+        st.success("모델은 이 이미지가 실사 사진 계열일 가능성이 높다고 보았습니다. 단, 고품질 AI 이미지까지 항상 구분한다는 의미는 아닙니다.")
 
     st.subheader("후보별 확률")
     plot_df = results_df.copy()
@@ -122,7 +134,8 @@ def render_prediction_results(results: list):
     )
     fig.update_layout(yaxis={"categoryorder": "total ascending"}, xaxis_range=[0, 100])
     st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(results_df.assign(**{"확률(%)": results_df["확률(%)"].round(2)}), use_container_width=True)
+    with st.expander("후보별 확률 상세 표", expanded=False):
+        st.dataframe(results_df.assign(**{"확률(%)": results_df["확률(%)"].round(2)}), use_container_width=True)
 
     with st.expander("원본 모델 출력 확인"):
         st.json(results)
@@ -164,6 +177,7 @@ def render_prediction_results(results: list):
 
 
 def render_single_prediction_tab():
+    st.info("작업 목적: 이미지 1장을 입력해 AI 활용 가능성 판정, 확률, 품질 경고, LLM 해설을 확인합니다.")
     tab_file, tab_url, tab_demo = st.tabs(["📁 파일 업로드", "🔗 URL 입력", "🧪 데모 샘플"])
     image = None
     input_source = None
@@ -262,7 +276,7 @@ def render_single_prediction_tab():
 
 def render_eval_tab():
     st.subheader("샘플 성능 평가")
-    st.caption("CSV의 `image_url`과 실제 `label`을 이용해 일부 샘플만 평가합니다. 네트워크와 CPU 성능에 따라 시간이 걸릴 수 있습니다.")
+    st.caption("기능 설명: CSV의 `image_url`과 실제 `label`을 이용해 일부 샘플의 모델 예측 성능을 점검합니다. 결과는 accuracy와 confusion matrix로 저장됩니다.")
 
     try:
         df = _load_metadata()
@@ -325,10 +339,11 @@ def render_eval_tab():
                 st.exception(e)
             return
 
-        progress = st.progress(0)
+        progress = st.progress(0, text="평가 준비 중입니다.")
 
         def update_progress(value):
-            progress.progress(min(100, int(value * 100)))
+            percent = min(100, int(value * 100))
+            progress.progress(percent, text=f"샘플 평가 진행률: {percent}%")
 
         with st.spinner("샘플 이미지를 다운로드하고 모델 예측을 수행하는 중입니다."):
             eval_df = evaluate_image_sample(
@@ -442,7 +457,7 @@ def render_eval_tab():
 
 def render_lightweight_training_tab():
     st.subheader("경량 모델 학습/비교")
-    st.caption("4GB/8GB GPU 환경을 고려해 이미지 임베딩 또는 추출 특징으로 가벼운 분류기를 학습합니다.")
+    st.caption("기능 설명: 추출 특징 또는 CNN 임베딩으로 가벼운 분류기를 학습해 현재 데이터에 맞춘 AI 활용 이미지 판별 성능을 확인합니다.")
     gpu = gpu_summary()
     device_cols = st.columns(4)
     device_cols[0].metric("실행 장치", gpu["device"])
@@ -542,7 +557,7 @@ def render_lightweight_training_tab():
 
 def render_ollama_diagnostics_tab():
     st.subheader("Ollama 진단")
-    st.caption("Ollama는 이미지 판별자가 아니라 모델 결과를 설명하는 텍스트 해설자입니다.")
+    st.caption("기능 설명: Ollama 서버 연결 상태를 확인하고, 모델 결과를 사용자가 이해하기 쉬운 문장으로 설명할 수 있는지 점검합니다.")
     status = check_ollama_status()
     if not status["available"]:
         st.warning("Ollama 서버에 연결할 수 없습니다.")

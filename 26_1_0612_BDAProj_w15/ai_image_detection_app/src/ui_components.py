@@ -1,6 +1,14 @@
 import streamlit as st
 
 
+def render_workflow_card(title: str, input_text: str, action_text: str, output_text: str) -> None:
+    st.markdown(f"#### {title}")
+    c1, c2, c3 = st.columns(3)
+    c1.info(f"입력\n\n{input_text}")
+    c2.warning(f"작업\n\n{action_text}")
+    c3.success(f"결과물\n\n{output_text}")
+
+
 def render_project_notice() -> None:
     st.info(
         "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스입니다. "
@@ -18,6 +26,10 @@ def render_leakage_warning() -> None:
 def render_report_tip(text: str) -> None:
     with st.expander("보고서에 쓸 수 있는 핵심 문장", expanded=False):
         st.write(text)
+
+
+def render_story_insight(title: str, body: str) -> None:
+    st.success(f"**인사이트 — {title}**\n\n{body}")
 
 
 def render_page_footer() -> None:

@@ -46,7 +46,7 @@ THUMB_H = 220
 st.sidebar.header("데이터 및 표시 옵션")
 rows_opt = st.sidebar.selectbox("로드할 메타 데이터 행 수", options=[None, 100, 500, 2000], index=0, format_func=lambda x: "전체" if x is None else str(x))
 sample_mode = st.sidebar.radio("샘플 방식", ("클래스별(기본)", "전체에서 랜덤"))
-sample_per_class = st.sidebar.slider("클래스당/전체 샘플 수", 1, 24, 6)
+sample_per_class = st.sidebar.slider("클래스당/전체 샘플 수", 1, 24, 4)
 grid_cols = st.sidebar.slider("이미지 그리드 열수", 1, 6, 4)
 
 st.sidebar.markdown("---")
@@ -124,6 +124,14 @@ with st.expander("메타데이터 검증 요약", expanded=False):
         else:
             st.success("label 값은 FAKE/REAL로 정리되어 있습니다.")
 
+missing_total = int(df_view.isna().sum().sum())
+missing_top = df_view.isna().sum().sort_values(ascending=False).head(3)
+leakage_existing = [col for col in ["category", "source", "fake_method", "detection_difficulty", "domain"] if col in df_view.columns]
+st.warning(
+    f"결측치는 전체 {missing_total:,}개이며 주로 {', '.join(missing_top.index.astype(str).tolist())} 컬럼에 있습니다. "
+    f"데이터 누수 가능 컬럼은 {', '.join(leakage_existing)}이며, 이 컬럼들은 데이터 이해용으로만 사용하고 모델 입력에서는 제외합니다."
+)
+
 # ------------------------ 상단 KPI 카드 --------------------------------
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
 with c1:
@@ -171,8 +179,8 @@ st.markdown(
 
 # ------------------------ 분포 시각화 ----------------------------------
 st.header("1. 클래스 분포 & 메타 분포")
-col_dist_left, col_dist_right = st.columns([2, 3])
-with col_dist_left:
+row1_left, row1_right = st.columns(2)
+with row1_left:
     if "label" in df_view.columns:
         vc = df_view["label"].value_counts().reset_index()
         vc.columns = ["label", "count"]
@@ -182,16 +190,17 @@ with col_dist_left:
     else:
         st.info("'label' 컬럼이 없습니다.")
 
-with col_dist_right:
-    # age_group 및 detection_difficulty 차트 추가
-    if "age_group" in df_view.columns:
-        ag = df_view["age_group"].fillna("UNKNOWN").value_counts().reset_index()
-        ag.columns = ["age_group", "count"]
-        fig_ag = px.bar(ag, x="age_group", y="count", title="Age group 분포")
-        st.plotly_chart(fig_ag, use_container_width=True)
+with row1_right:
+    if "image_quality" in df_view.columns:
+        iq = df_view["image_quality"].fillna("UNKNOWN").value_counts().reset_index()
+        iq.columns = ["image_quality", "count"]
+        fig_iq = px.bar(iq, x="image_quality", y="count", title="Image quality 분포")
+        st.plotly_chart(fig_iq, use_container_width=True)
     else:
-        st.info("age_group 컬럼이 없습니다.")
+        st.info("image_quality 컬럼이 없습니다.")
 
+row2_left, row2_right = st.columns(2)
+with row2_left:
     if "detection_difficulty" in df_view.columns:
         dd = df_view["detection_difficulty"].fillna("UNKNOWN").value_counts().reset_index()
         dd.columns = ["detection_difficulty", "count"]
@@ -200,33 +209,27 @@ with col_dist_right:
     else:
         st.info("detection_difficulty 컬럼이 없습니다.")
 
-if {"dataset_split", "label"}.issubset(df_view.columns):
-    split_df = df_view.groupby(["dataset_split", "label"]).size().reset_index(name="count")
-    fig_split = px.bar(split_df, x="dataset_split", y="count", color="label", barmode="group", title="Dataset split × label 분포")
-    st.plotly_chart(fig_split, use_container_width=True)
-    st.caption("해석: train/val/test 분할이 존재하므로, 샘플 평가 결과를 보고서에 쓸 때 어떤 분할을 사용했는지 명시하는 것이 좋습니다.")
+with row2_right:
+    if "dataset_split" in df_view.columns:
+        split_counts = df_view["dataset_split"].fillna("UNKNOWN").value_counts().reset_index()
+        split_counts.columns = ["dataset_split", "count"]
+        fig_split = px.bar(split_counts, x="dataset_split", y="count", title="Dataset split 분포")
+        st.plotly_chart(fig_split, use_container_width=True)
+    else:
+        st.info("dataset_split 컬럼이 없습니다.")
 
 # ------------------------ 결측 / 누수 리포트 -------------------------------
 st.header("2. 결측치 및 데이터 누수")
-with st.expander("결측치 요약", expanded=False):
-    na = df_view.isnull().sum()
-    na = na[na > 0]
-    if len(na):
-        st.dataframe(na.to_frame("missing_count"), use_container_width=True)
-        missing_df = df_view[df_view.isnull().any(axis=1)].copy()
-        csv_bytes = missing_df.to_csv(index=False).encode("utf-8")
-        st.download_button("결측 행 CSV로 다운로드", data=csv_bytes, file_name="missing_rows.csv", mime="text/csv")
-    else:
-        st.success("결측치 없음")
-
-with st.expander("데이터 누수 컬럼 확인", expanded=False):
-    st.warning("아래 컬럼들은 레이블과 강하게 연관될 수 있으니 모델 특성으로 사용하지 마세요.")
-    for col in LEAKAGE_COLS:
-        if col in df_view.columns:
-            with st.expander(f"{col} × label 교차표", expanded=False):
-                st.dataframe(df_view.groupby([col, "label"]).size().unstack(fill_value=0), use_container_width=True)
-        else:
-            st.write(f"{col} 컬럼이 존재하지 않습니다.")
+na = df_view.isnull().sum()
+na = na[na > 0].sort_values(ascending=False)
+if len(na):
+    st.write(f"결측치는 총 {int(na.sum()):,}개이며, 상위 결측 컬럼은 {', '.join(na.head(5).index.astype(str).tolist())}입니다.")
+else:
+    st.success("결측치가 없습니다.")
+st.write(
+    f"데이터 누수 가능 컬럼은 {', '.join([c for c in LEAKAGE_COLS if c in df_view.columns])}입니다. "
+    "이 컬럼들은 데이터 구조를 이해하는 데만 사용하고 모델 학습 입력에서는 제외합니다."
+)
 
 st.markdown("---")
 
@@ -310,12 +313,6 @@ with grid_col:
                     try:
                         st.image(str(img_path), width=thumb_display_w)
                         st.caption(caption)
-                        meta_bits = []
-                        for meta_col in ["image_quality", "resolution", "domain"]:
-                            if meta_col in row.index and pd.notna(row.get(meta_col)):
-                                meta_bits.append(f"{meta_col}: {row.get(meta_col)}")
-                        if meta_bits:
-                            st.caption(" / ".join(meta_bits))
                     except Exception:
                         st.write("[이미지 표시 실패]")
                         st.caption(caption)
@@ -352,9 +349,18 @@ with detail_col:
             sel = None
         if sel is not None:
             r = sample_df.loc[sel]
-            md = r.to_dict()
-            cached = r.get("image_path")
-            md["cached_path"] = str(cached) if cached else None
+            detail_cols = [
+                "label",
+                "image_quality",
+                "resolution",
+                "dataset_split",
+                "confidence_score",
+                "source",
+                "fake_method",
+                "detection_difficulty",
+                "domain",
+            ]
+            md = {col: r.get(col) for col in detail_cols if col in r.index and pd.notna(r.get(col))}
             st.markdown('<div class="detail-json">', unsafe_allow_html=True)
             st.json(md)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -368,6 +374,10 @@ st.markdown("---")
 
 # ------------------------ 유틸 영역: 캐시 검사 / 결측 검증 ------------------
 st.header("4. 추가 도구")
+st.info(
+    "추가 도구는 이미지 URL과 로컬 캐시 상태를 점검하는 보조 기능입니다. "
+    "이미지가 실제로 다운로드되는지, 캐시가 얼마나 쌓였는지, 메타데이터 요약을 저장할지 확인할 때 사용합니다. 모델 학습 기능은 아닙니다."
+)
 col_tool_left, col_tool_right = st.columns(2)
 with col_tool_left:
     # allow user to set limit before clicking
@@ -390,24 +400,46 @@ with col_tool_right:
 st.markdown("---")
 st.header("5. 특성 추출 자동화 (선택 샘플에 대해)")
 st.caption("선택된 스냅샷에 대해 다운로드 상태, 이미지 품질, 얼굴 크롭, 기본 특징추출을 순서대로 수행하고 CSV로 저장합니다.")
+st.info(
+    "특징추출은 이미지를 숫자로 바꾸는 과정입니다. 밝기, 선명도, RGB 색상 평균, 얼굴 영역 비율 같은 값을 계산해 CSV로 저장하며, "
+    "이 파일은 시각화 페이지의 특징 분포 분석과 모델·서비스 페이지의 경량 모델 학습 입력으로 사용됩니다."
+)
+st.dataframe(
+    pd.DataFrame(
+        [
+            {"생성 컬럼": "brightness", "의미": "이미지 평균 밝기"},
+            {"생성 컬럼": "sharpness", "의미": "이미지 선명도"},
+            {"생성 컬럼": "avg_r / avg_g / avg_b", "의미": "RGB 색상 평균"},
+            {"생성 컬럼": "face_area_ratio", "의미": "얼굴 영역이 이미지에서 차지하는 비율"},
+            {"생성 컬럼": "mean_pixel / std_pixel", "의미": "전체 픽셀 평균과 표준편차"},
+        ]
+    ),
+    use_container_width=True,
+)
 pre_left, pre_right = st.columns(2)
 with pre_left:
     use_quality_check = st.checkbox("이미지 품질 검사 후 통과 이미지로 특징 추출", value=True)
     use_face_crop = st.checkbox("얼굴 검출 및 크롭 후 특성 추출", value=True)
     require_face_for_crop = st.checkbox("얼굴 필수(얼굴 없는 이미지는 제외)", value=False)
+    max_extract_rows = st.number_input("이번에 추출할 최대 이미지 수", min_value=1, max_value=100, value=min(8, max(1, len(sample_df))), step=1)
 with pre_right:
     iq_min_width = st.number_input("최소 가로 크기", min_value=32, value=64, step=16)
     iq_min_height = st.number_input("최소 세로 크기", min_value=32, value=64, step=16)
     iq_min_sharpness = st.number_input("최소 선명도", min_value=0.0, value=20.0, step=5.0)
+    stop_after_quality = st.checkbox("품질 검사까지만 실행하고 중지", value=False)
 if st.button("선택 샘플 특징 추출 시작"):
     with st.spinner("특성 추출 중... (이미지가 많으면 시간이 걸립니다)"):
         # require image_path column
-        proc_df = sample_df.copy()
+        proc_df = sample_df.head(int(max_extract_rows)).copy()
         if "image_path" not in proc_df.columns or proc_df["image_path"].isnull().all():
             st.error("추출할 로컬 이미지 경로가 없습니다. 먼저 썸네일을 캐시하여 로컬 경로를 확보하세요.")
         else:
             start = time.time()
+            step_progress = st.progress(0, text="전처리 시작")
+            status_box = st.empty()
+            status_box.write(f"대상 이미지: {len(proc_df)}개")
             if use_quality_check:
+                step_progress.progress(20, text="1/4 이미지 품질 검사 중")
                 proc_df = filter_valid_images(
                     proc_df,
                     image_col="image_path",
@@ -422,9 +454,14 @@ if st.button("선택 샘플 특징 추출 시작"):
                 if q_fail:
                     st.dataframe(proc_df["iq_reason"].fillna("pass").value_counts().rename_axis("reason").reset_index(name="count"), use_container_width=True)
                 proc_df = proc_df[proc_df["iq_pass"] == True].copy()
+                if stop_after_quality:
+                    step_progress.progress(100, text="품질 검사까지만 완료")
+                    st.info("사용자 설정에 따라 품질 검사까지만 실행하고 중지했습니다. 이 결과로 통과/실패 기준을 먼저 조정할 수 있습니다.")
+                    st.stop()
             # optional: 얼굴 검출 및 크롭 수행
             if use_face_crop and detect_and_crop_for_df is not None:
                 try:
+                    step_progress.progress(45, text="2/4 얼굴 검출 및 크롭 중")
                     st.info("얼굴 검출 및 크롭을 수행합니다. (시간이 걸릴 수 있습니다)")
                     proc_df_crops = detect_and_crop_for_df(proc_df, image_col="image_path", id_col=("image_id" if "image_id" in proc_df.columns else None),
                                                           margin=0.2, require_face=require_face_for_crop, n_workers=max_workers)
@@ -436,12 +473,16 @@ if st.button("선택 샘플 특징 추출 시작"):
                 proc_df = proc_df[proc_df["face_found"] == True].copy()
             # decide which column to use for extraction: face_path if available else image_path
             feat_image_col = "face_path" if "face_path" in proc_df.columns and proc_df["face_path"].notnull().any() else "image_path"
+            step_progress.progress(70, text="3/4 이미지 특징 추출 중")
             df_feats = batch_extract_features(proc_df, image_col=feat_image_col, nrows=None, n_workers=max_workers)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_path = Path(os.path.dirname(os.path.dirname(__file__))) / "data" / f"features_sample_{ts}.csv"
+            step_progress.progress(90, text="4/4 특징 파일 저장 중")
             save_features(df_feats, out_path)
             elapsed = time.time() - start
+            step_progress.progress(100, text="특징 추출 완료")
             st.success(f"특성 추출 완료: {len(df_feats)}개 행. 소요 {elapsed:.1f}s. 저장: {out_path}")
+            st.caption("결과물: 이 CSV는 시각화 페이지에서 특징 분포 분석에 사용할 수 있고, 모델·서비스 페이지에서 경량 모델 학습 입력으로도 사용할 수 있습니다.")
             summary_cols = [c for c in ["label", "download_ok", "iq_pass", "iq_reason", "face_found", "face_error", "width", "height", "brightness", "sharpness", "face_area_ratio"] if c in df_feats.columns]
             if summary_cols:
                 st.dataframe(df_feats[summary_cols].head(30), use_container_width=True)
