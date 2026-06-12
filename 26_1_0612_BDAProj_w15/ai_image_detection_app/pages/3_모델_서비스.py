@@ -586,7 +586,7 @@ def render_ollama_diagnostics_tab():
             st.success(f"보고서 반영 완료: {report_path}")
 
 
-st.title("🕵️ 모델 · 서비스 (AI 활용 이미지 판별)")
+st.title("🤖 모델 · 서비스 (AI 활용 이미지 판별)")
 st.caption("이미지 제작 과정에 AI가 활용되었을 가능성을 판별하고, 일부 샘플 기준 성능을 점검합니다.")
 render_project_notice()
 

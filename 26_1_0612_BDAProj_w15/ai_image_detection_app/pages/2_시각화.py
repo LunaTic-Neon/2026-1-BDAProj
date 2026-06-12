@@ -14,7 +14,7 @@ from src.report_sync import find_project_report_path, sync_features_to_report
 from src.ui_components import render_leakage_warning, render_project_notice, render_story_insight, render_workflow_card
 
 
-st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
+st.title("📊 시각화 — AI 활용 이미지 판별 인사이트")
 st.caption("데이터 분포, 출처 편향, 누수 가능 컬럼을 확인하여 모델 입력에 쓰면 안 되는 정보를 구분합니다.")
 render_project_notice()
 render_workflow_card(

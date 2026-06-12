@@ -35,7 +35,7 @@ except Exception:
 
 import numpy as np
 
-st.title("📊 이미지 EDA — AI 활용 이미지 판별")
+st.title("🔎 이미지 EDA — AI 활용 이미지 판별")
 render_project_notice()
 
 # thumbnail 기본 크기 (페이지 전체에서 재사용)
@@ -46,7 +46,7 @@ THUMB_H = 220
 st.sidebar.header("데이터 및 표시 옵션")
 rows_opt = st.sidebar.selectbox("로드할 메타 데이터 행 수", options=[None, 100, 500, 2000], index=0, format_func=lambda x: "전체" if x is None else str(x))
 sample_mode = st.sidebar.radio("샘플 방식", ("클래스별(기본)", "전체에서 랜덤"))
-sample_per_class = st.sidebar.slider("클래스당/전체 샘플 수", 1, 24, 4)
+sample_per_class = st.sidebar.slider("클래스당/전체 샘플 수", 1, 8, 4)
 grid_cols = st.sidebar.slider("이미지 그리드 열수", 1, 6, 4)
 
 st.sidebar.markdown("---")
@@ -58,7 +58,13 @@ if st.sidebar.button("전체 캐시 삭제(이미지)"):
 
 # UI: 병렬 워커 및 캐시 최대크기 설정
 st.sidebar.markdown("---")
-max_workers = st.sidebar.slider("병렬 다운로드 워커 수", 1, 32, 8)
+max_workers = st.sidebar.slider(
+    "병렬 다운로드 워커 수",
+    1,
+    32,
+    8,
+    help="이미지를 동시에 다운로드하는 작업 수입니다. 값이 높을수록 빠를 수 있지만 네트워크 부담이 커질 수 있습니다.",
+)
 cache_limit_mb = st.sidebar.number_input("캐시 최대 크기(MB, 0=무제한)", min_value=0, value=0)
 if cache_limit_mb > 0:
     set_cache_max_bytes(int(cache_limit_mb) * 1024 * 1024)
@@ -95,7 +101,7 @@ if "image_url" in df_view.columns:
     df_view = df_view.assign(domain=url_domain(df_view))
 
 st.info(
-    "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스"
+    "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스입니다."
 )
 render_report_tip(
     "- URL 기반 얼굴 이미지 데이터\n"

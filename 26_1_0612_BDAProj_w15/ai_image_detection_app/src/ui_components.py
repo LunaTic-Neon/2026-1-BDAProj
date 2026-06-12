@@ -11,7 +11,7 @@ def render_workflow_card(title: str, input_text: str, action_text: str, output_t
 
 def render_project_notice() -> None:
     st.info(
-        "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스"
+        "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스입니다."
     )
 
 
