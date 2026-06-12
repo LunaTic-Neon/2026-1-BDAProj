@@ -1,10 +1,7 @@
 # AI 활용 이미지 판별 앱
 
-이미지 제작 과정에 AI가 활용되었을 가능성이 있는 생성/합성·아바타 계열 이미지(FAKE)인지 실제 사진(REAL)인지 판별하는 Streamlit 웹 앱입니다.
-`project_template`을 복사해 시작했으며, 이미지 데이터(CSV+URL)에 맞게 `data_loader.py`·`1_EDA.py`를 교체했습니다.
-문제정의는 [`../문제정의.md`](../문제정의.md) 참고.
-
-> 이 프로젝트는 영상 기반 탐지가 아니라, URL 기반 얼굴 이미지의 AI 활용 가능성 판별 문제에 가깝습니다.
+이미지 제작 과정에 AI가 활용되었을 가능성이 있는 얼굴 이미지를 판별하는 Streamlit 앱입니다.
+이 프로젝트는 평가기준에 맞춰 **EDA, 시각화, 모델·서비스**의 핵심만 유지합니다.
 
 ## 실행
 
@@ -18,93 +15,28 @@ streamlit run app.py
 
 ```
 ai_image_detection_app/
-├── app.py                 # 진입점 (st.navigation)
+├── app.py
 ├── pages/
-│   ├── 1_EDA.py          # 데이터 요약·결측·분포 (1차 작업)
-│   ├── 2_시각화.py        # 인사이트 그래프 (2차 작업)
-│   └── 3_모델_서비스.py   # 단일 이미지 판별 + 샘플 성능 평가
+│   ├── 1_EDA.py
+│   ├── 2_시각화.py
+│   └── 3_모델_서비스.py
 ├── src/
-│   ├── data_loader.py    # CSV 적재 + 이미지 URL 다운로드 (@st.cache_data)
-│   ├── face_preprocess.py # 얼굴 검출·크롭 보조 유틸
-│   ├── model_eval.py     # 샘플 평가 유틸
-│   └── features.py       # 정제·특성 (2차 작업)
-├── data/
-│   └── FINAL_DATASET.csv # Kaggle Deepfake Detection Dataset 2026 (gitignore)
+│   ├── data_loader.py
+│   ├── image_quality.py
+│   ├── model_eval.py
+│   └── ui_components.py
 └── requirements.txt
 ```
 
-## 데이터
+## 핵심 기능
 
-- 출처: Kaggle — Deepfake Detection Dataset 2026 (6,557행 × 17열)
-- 이미지는 CSV의 `image_url`로 제공되어 실행 시 다운로드합니다.
-- 데이터 파일(`data/*.csv`)은 용량 문제로 git에서 제외됩니다.
+- **EDA**: 라벨 분포, 결측치, 누수 가능 컬럼, 샘플 이미지 확인
+- **시각화**: 데이터 편향과 품질 분포 확인
+- **모델·서비스**: 이미지 업로드 후 FAKE/REAL 판별, 샘플 평가, F1 score/accuracy 기반 결과 해석
 
-## 모델·서비스 기능
+## 발표/보고서 방향
 
-- 단일 이미지 판별: 파일 업로드, URL 입력, 로컬 데모 샘플 입력을 지원합니다.
-- 품질 점검: 해상도, 종횡비, 밝기, 선명도 기준으로 입력 이미지 경고를 표시합니다.
-- 샘플 성능 평가: `FINAL_DATASET.csv`의 일부 샘플을 다운로드해 실제 라벨과 모델 예측을 비교합니다.
-- 평가 결과: accuracy, confusion matrix, 클래스별 요약, 오분류 사례, CSV 다운로드를 제공합니다.
-- 경량 모델 학습/비교: 추출 특징 또는 ResNet18/MobileNetV3/EfficientNet-B0 임베딩으로 Logistic Regression/RandomForest를 학습합니다.
-- Ollama 해설: 선택적으로 로컬 LLM을 사용해 모델 예측 결과를 쉬운 문장으로 설명합니다.
-- 보고서 자동 반영: 평가 결과와 특징추출 결과를 `../보고서.md`의 자동 반영 구역에 업데이트할 수 있습니다.
-
-발표용 샘플 이미지는 아래 폴더에 넣으면 앱에서 자동으로 선택할 수 있습니다.
-
-```
-data/demo_samples/
-├── real/
-└── fake/
-```
-
-## Ollama 선택 기능
-
-Ollama 해설은 선택 기능입니다. Ollama가 없어도 기본 판별, 평가, EDA, 특징추출 기능은 동작합니다.
-
-사용하려면 별도 터미널에서 아래를 실행하세요.
-
-```bash
-ollama serve
-ollama pull llama3.2
-```
-
-앱의 모델·서비스 페이지에서 `Ollama 해설 사용`을 체크하면 예측 라벨, 확률, 신뢰도, 이미지 품질 경고를 바탕으로 사용자용 해설을 생성합니다.
-
-## 경량 학습 권장 실행법
-
-개인 PC 4GB GPU 또는 CPU 환경에서는 작은 샘플과 작은 batch size를 사용하세요.
-
-```bash
-python -m src.image_embeddings --limit 100 --model resnet18 --batch-size 4 --out data/embeddings_resnet18_100.parquet
-python -m src.train_lightweight_model --features data/embeddings_resnet18_100.parquet --out models/lightweight_model.joblib
-```
-
-학교 PC 8GB GPU에서는 더 큰 샘플과 `efficientnet_b0`도 시도할 수 있습니다.
-
-```bash
-python -m src.image_embeddings --limit 1000 --model efficientnet_b0 --batch-size 8 --out data/embeddings_efficientnet_b0_1000.parquet
-python -m src.train_lightweight_model --features data/embeddings_efficientnet_b0_1000.parquet --out models/lightweight_model.joblib
-```
-
-이 방식은 대형 모델 전체를 파인튜닝하지 않고, 사전학습 CNN이 뽑은 이미지 표현 벡터를 가벼운 분류기에 학습시키는 구조입니다.
-
-## 보고서 자동 반영
-
-- 모델·서비스 페이지에서 샘플 성능 평가 후 `보고서용 평가 결과 저장` → `평가 결과를 보고서에 반영`을 누릅니다.
-- 시각화 페이지에서 특징 파일을 선택한 뒤 `선택한 특징 파일을 보고서에 반영`을 누릅니다.
-- 자동 반영은 `../보고서.md`의 `AUTO:EVAL_RESULTS`, `AUTO:FEATURE_RESULTS` 구역만 갱신합니다.
-
-## 진행 상태
-
-- [x] 앱 골격 + EDA 페이지 착수 (1차 작업)
-- [x] 시각화 페이지 + 전처리 안정화 (2차 작업)
-- [x] 판별 서비스 MVP + 샘플 평가 기능 (3차 작업)
-
-## 기말 제출 체크리스트
-
-- [x] `streamlit run app.py` 실행 가능
-- [x] EDA 페이지: 데이터 요약, 결측치, 라벨 분포, 샘플 이미지 확인
-- [x] 시각화 페이지: 인사이트 그래프, 누수 컬럼 진단, 특징추출 결과 분석
-- [x] 모델·서비스 페이지: 단일 이미지 판별, 샘플 성능 평가, Ollama 해설
-- [x] 전처리·특징추출: 다운로드, 품질 검사, 얼굴 크롭, 특징 CSV 저장
-- [x] 보고서 자동 반영: 평가 결과와 특징추출 결과를 `../보고서.md`에 반영
+- 데이터 누수 가능성을 명확히 설명
+- 복잡한 기능보다 해석 가능한 핵심 기능 위주로 발표
+- 결과 해석은 F1 score, accuracy, confusion matrix 같은 수치 중심으로 간단히 정리
+- 한계점은 숨기지 않고 데이터 편향과 URL 기반 구조를 중심으로 정리
