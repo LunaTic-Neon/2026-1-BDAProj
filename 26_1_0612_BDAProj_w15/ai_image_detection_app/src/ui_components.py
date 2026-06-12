@@ -11,8 +11,7 @@ def render_workflow_card(title: str, input_text: str, action_text: str, output_t
 
 def render_project_notice() -> None:
     st.info(
-        "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스입니다. "
-        "데이터 특성상 영상 기반 탐지가 아니라 실사 사진과 생성·합성·아바타 계열 이미지의 구분 문제로 해석합니다."
+        "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스"
     )
 
 
@@ -24,8 +23,7 @@ def render_leakage_warning() -> None:
 
 
 def render_report_tip(text: str) -> None:
-    with st.expander("보고서에 쓸 수 있는 핵심 문장", expanded=False):
-        st.write(text)
+    st.markdown(text)
 
 
 def render_story_insight(title: str, body: str) -> None:

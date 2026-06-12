@@ -95,14 +95,11 @@ if "image_url" in df_view.columns:
     df_view = df_view.assign(domain=url_domain(df_view))
 
 st.info(
-    "이 프로젝트는 영상 기반 탐지가 아니라, 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 "
-    "이미지 기반 MVP입니다. 현재 데이터에서 REAL은 주로 Unsplash 실사 사진, FAKE는 Dicebear·Multiavatar 등 "
-    "생성/아바타 API 계열 이미지로 구성되어 있어 출처·메타 컬럼은 모델 입력에서 제외합니다."
+    "이 프로젝트는 이미지 제작 과정에 AI가 활용되었을 가능성을 판별하는 서비스"
 )
-render_leakage_warning()
 render_report_tip(
-    "본 데이터는 URL 기반 얼굴 이미지 데이터로, REAL은 주로 실사 사진 출처이고 FAKE는 생성/아바타 API 출처입니다. "
-    "따라서 모델에는 메타데이터가 아니라 이미지 픽셀 자체를 입력으로 사용하도록 설계했습니다."
+    "- URL 기반 얼굴 이미지 데이터\n"
+    "- 모델 입력 기준: 메타데이터 제외, 이미지 픽셀 중심"
 )
 
 with st.expander("메타데이터 검증 요약", expanded=False):
@@ -123,14 +120,6 @@ with st.expander("메타데이터 검증 요약", expanded=False):
             st.warning(f"예상 외 label 값: {unexpected}")
         else:
             st.success("label 값은 FAKE/REAL로 정리되어 있습니다.")
-
-missing_total = int(df_view.isna().sum().sum())
-missing_top = df_view.isna().sum().sort_values(ascending=False).head(3)
-leakage_existing = [col for col in ["category", "source", "fake_method", "detection_difficulty", "domain"] if col in df_view.columns]
-st.warning(
-    f"결측치는 전체 {missing_total:,}개이며 주로 {', '.join(missing_top.index.astype(str).tolist())} 컬럼에 있습니다. "
-    f"데이터 누수 가능 컬럼은 {', '.join(leakage_existing)}이며, 이 컬럼들은 데이터 이해용으로만 사용하고 모델 입력에서는 제외합니다."
-)
 
 # ------------------------ 상단 KPI 카드 --------------------------------
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
@@ -223,13 +212,9 @@ st.header("2. 결측치 및 데이터 누수")
 na = df_view.isnull().sum()
 na = na[na > 0].sort_values(ascending=False)
 if len(na):
-    st.write(f"결측치는 총 {int(na.sum()):,}개이며, 상위 결측 컬럼은 {', '.join(na.head(5).index.astype(str).tolist())}입니다.")
+    st.write(f"결측치 총 {int(na.sum()):,}개")
 else:
-    st.success("결측치가 없습니다.")
-st.write(
-    f"데이터 누수 가능 컬럼은 {', '.join([c for c in LEAKAGE_COLS if c in df_view.columns])}입니다. "
-    "이 컬럼들은 데이터 구조를 이해하는 데만 사용하고 모델 학습 입력에서는 제외합니다."
-)
+    st.success("결측치 없음")
 
 st.markdown("---")
 
