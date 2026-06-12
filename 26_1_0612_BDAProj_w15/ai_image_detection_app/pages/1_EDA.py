@@ -12,7 +12,6 @@ from src.features import url_domain
 from src.ui_components import render_project_notice, render_report_tip, render_leakage_warning
 from src.data_loader import load_data, data_missing_message
 
-st.set_page_config(page_title="EDA", page_icon="🔎", layout="wide")
 st.title("🔎 이미지 EDA — AI 활용 이미지 판별")
 render_project_notice()
 

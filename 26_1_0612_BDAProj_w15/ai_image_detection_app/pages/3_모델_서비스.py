@@ -20,7 +20,6 @@ MODEL_NAME = "prithivMLmods/Deep-Fake-Detector-Model"
 APP_DIR = Path(__file__).resolve().parents[1]
 DEMO_DIR = APP_DIR / "data" / "demo_samples"
 
-st.set_page_config(page_title="모델·서비스", page_icon="🤖", layout="wide")
 st.title("AI 모델·서비스 — 이미지 판별")
 render_project_notice()
 st.caption("사전학습 CNN 임베딩에 우리 데이터로 추가학습한 경량 분류기를 연결해 판별합니다.")
@@ -230,7 +229,7 @@ def render_single_prediction_tab():
             render_local_prediction_result(local_result)
             return
         except Exception as e:
-            st.warning("추가학습 모델 예측에 실패하여 기본 사전학습 모델로 전환합니다.")
+            st.warning("추가학습 모델 실행 환경이 준비되지 않아 기본 사전학습 모델로 전환합니다.")
             with st.expander("오류 상세"):
                 st.exception(e)
 

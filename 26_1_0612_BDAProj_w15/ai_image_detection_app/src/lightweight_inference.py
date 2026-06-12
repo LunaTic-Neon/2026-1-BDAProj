@@ -4,10 +4,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-import torch
 from PIL import Image
-
-from src.image_embeddings import _load_torchvision_model, get_device
 
 
 DEFAULT_MODEL_PATHS = [
@@ -33,6 +30,12 @@ def load_lightweight_bundle(model_path: str | Path | None = None) -> dict[str, A
 
 
 def extract_single_embedding(image: Image.Image, model_name: str = "resnet18") -> np.ndarray:
+    try:
+        import torch
+        from src.image_embeddings import _load_torchvision_model, get_device
+    except Exception as exc:
+        raise RuntimeError("추가학습 모델 추론에는 torch와 torchvision이 필요합니다.") from exc
+
     model, transform, _ = _load_torchvision_model(model_name)
     device = get_device()
     model = model.to(device)

@@ -12,7 +12,6 @@ from src.data_loader import LEAKAGE_COLS, data_missing_message, load_data
 from src.features import add_resolution_features, url_domain
 from src.ui_components import render_leakage_warning, render_story_insight
 
-st.set_page_config(page_title="시각화", page_icon="📈", layout="wide")
 st.title("📈 시각화 — AI 활용 이미지 판별 인사이트")
 st.caption("데이터 분포와 편향을 간단히 확인하는 페이지입니다.")
 
