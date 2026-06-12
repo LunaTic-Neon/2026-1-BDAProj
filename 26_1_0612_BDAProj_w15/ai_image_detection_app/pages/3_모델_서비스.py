@@ -230,15 +230,17 @@ def render_single_prediction_tab():
             return
         except Exception as e:
             st.warning("추가학습 모델 실행 환경이 준비되지 않아 기본 사전학습 모델로 전환합니다.")
-            with st.expander("오류 상세"):
+            with st.expander("추가학습 모델 오류 상세"):
                 st.exception(e)
 
     try:
         classifier = load_img_model()
         results = classifier(image)
     except Exception as e:
-        st.error("모델 예측 중 오류가 발생했습니다.")
-        st.exception(e)
+        st.error("현재 이 환경에서는 기본 사전학습 모델도 불러오지 못했습니다.")
+        st.info("`transformers`, `huggingface-hub` 또는 관련 의존성이 설치되지 않았을 수 있습니다. 현재는 단일 이미지 판별 기능을 사용할 수 없습니다.")
+        with st.expander("기본 모델 오류 상세"):
+            st.exception(e)
         return
 
     if not results:
@@ -282,8 +284,10 @@ def render_eval_tab():
         eval_df = evaluate_image_sample(df_sample, classifier, max_workers=max_workers)
         metrics = compute_eval_metrics(eval_df)
     except Exception as e:
-        st.error("샘플 평가 중 오류가 발생했습니다.")
-        st.exception(e)
+        st.error("샘플 평가를 실행할 수 없습니다.")
+        st.info("현재 환경에서는 기본 사전학습 모델 또는 관련 의존성이 준비되지 않아 샘플 평가가 중단되었습니다.")
+        with st.expander("오류 상세"):
+            st.exception(e)
         return
 
     st.success("샘플 평가가 완료되었습니다.")
