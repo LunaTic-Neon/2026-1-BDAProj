@@ -11,7 +11,6 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-학교 PC에서는 GitHub에서 프로젝트를 클론한 뒤 위 명령만 실행하면 됩니다.
 앱은 `models/ai_image_detector.pt`가 있으면 이 파인튜닝 모델을 우선 사용합니다.
 
 ## 구조
@@ -62,13 +61,3 @@ ai_image_detection_app/
 - 복잡한 기능보다 해석 가능한 핵심 기능 위주로 발표
 - 결과 해석은 Accuracy, F1 score, confusion matrix 중심으로 간단히 정리
 - 한계점은 숨기지 않고 데이터 편향과 URL 기반 구조를 중심으로 정리
-
-## 보고서 캡처 추천
-
-- EDA: 라벨별 메타 요약 그래프
-- EDA: REAL/FAKE 샘플 이미지 비교
-- 시각화: 성별 Unknown 편향 그래프
-- 시각화: 연령대/성별 조합별 FAKE 비율 히트맵
-- 모델·서비스: 특성추출 화면
-- 모델·서비스: 이미지 판별 결과 화면
-- 모델·서비스: 샘플 평가 지표와 Confusion Matrix
