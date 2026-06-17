@@ -5,11 +5,16 @@ __pycache__/
 .ipynb_checkpoints/
 
 data/
+!26_1_0612_BDAProj_w15/ai_image_detection_app/data/
+!26_1_0612_BDAProj_w15/ai_image_detection_app/data/FINAL_DATASET.csv
+!26_1_0612_BDAProj_w15/ai_image_detection_app/data/demo_samples/
+!26_1_0612_BDAProj_w15/ai_image_detection_app/data/demo_samples/**
 *.zip
 *.tar.gz
 
 # 모델 가중치 (자동 다운로드)
 *.pt
+!26_1_0612_BDAProj_w15/ai_image_detection_app/models/ai_image_detector.pt
 
 .streamlit/secrets.toml
 
