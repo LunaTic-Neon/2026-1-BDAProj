@@ -1,5 +1,7 @@
 # 모델 가중치
 *.pt
+!models/resnet18_finetuned.pt
+!models/ai_image_detector.pt
 
 __pycache__/
 .streamlit/secrets.toml
