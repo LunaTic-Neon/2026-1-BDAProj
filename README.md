@@ -26,6 +26,9 @@ Streamlit 기반 대시보드 구축, 공공데이터 API 활용, 로컬 LLM(Oll
 | w10 | `26_1_0508_BDAProj_w10` | 웹 공격 탐지 — 데이터 준비/EDA | Kaggle CSIC 2010 HTTP 데이터셋 정제, 공격 유형(SQLi/XSS/Path Traversal/CMD Injection) 퀴즈, EDA 노트북 |
 | w11 | `26_1_0515_BDAProj_w11` | 웹 공격 탐지 — 전처리/특성 + LLM 분류 | CSIC 2010 전처리·특성 엔지니어링 노트북(23개 숫자형 특성, 80:20 분할, StandardScaler), Ollama `gemma3:4b` HTTP 요청 분류 + 프롬프트 4종(zero-shot / 2-shot / 7-shot / attack catalog) 비교 실험 (`LLM_PROMPT_REPORT.md`) |
 | w12 | `26_1_0522_BDAProj_w12` | 이미지 분류 — 전처리·증강·사전학습 ViT | ① 이미지 표현/전처리 노트북(PIL ↔ NumPy ↔ `torch.Tensor` 변환, `Resize → ToTensor → Normalize`, CIFAR-10 로드 + DataLoader), ② 데이터 증강 노트북(`RandomHorizontalFlip`/`RandomRotation`/`RandomResizedCrop`/`ColorJitter`/`RandomGrayscale`/`GaussianBlur`, 학습용·검증용 `Compose` 분리), ③ HuggingFace `pipeline("image-classification")`으로 `google/vit-base-patch16-224` top-5 분류 + Attention 시각화 + ResNet/ConvNeXt/Swin 비교 |
+| w13 | `26_1_0529_BDAProj_w13` | AI 이미지 판별 프로젝트 | 기획과 문제정의 및 데이터 수집 |
+| w14 | `26_1_0605_BDAProj_w14` | AI 이미지 판별 프로젝트 | EDA + 시각화를 통한 인사이트 도출 |
+| w15 | `26_1_0612_BDAProj_w15` | AI 이미지 판별 프로젝트 | 모델 및 서비스 구현 |
 
 ---
 
